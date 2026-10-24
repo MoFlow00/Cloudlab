@@ -1,67 +1,58 @@
-# NGROK Cloud
+# CloudLab
 
-Lightweight browser-accessible Linux XFCE4 desktop using Selkies.
+A lightweight browser-accessible Linux XFCE4 desktop, now with an experimental Project Lab for trying public GitHub projects.
 
-## Architecture
+## Desktop architecture
 
-Ubuntu GitHub Runner
+Ubuntu GitHub Actions runner
 -> XFCE4
 -> Selkies WebRTC
--> H.264 encoded desktop stream
+-> H.264 software-encoded desktop stream
 -> Cloudflare Calls TURN when relay is required
 -> Browser
 
-Cloudflare Quick Tunnel remains only for the HTTPS/WebSocket signaling and web interface. The desktop media path is WebRTC instead of carrying the video stream through the Cloudflare Tunnel.
+Cloudflare Quick Tunnel provides HTTPS/WebSocket signaling and the web interface. Desktop media uses WebRTC, with TURN relay when needed.
 
-Selkies supports WebRTC as an opt-in transport and Cloudflare Calls TURN as a geodistributed TURN service. The GitHub-hosted runner does not need an inbound UDP port because TURN provides the relay path. citeturn2search0
+## Project Lab
 
-## Why Selkies WebRTC
+Project Lab is a first experimental add-on, launched from the desktop shortcut.
 
-The previous QuickDesk setup used Xvfb + x11vnc + noVNC. That sends the desktop through a traditional VNC framebuffer path.
+- Add a public GitHub repository URL and inspect its metadata.
+- Save project definitions to a Hugging Face Dataset so they can be reloaded in later sessions.
+- Clone a selected project into the temporary runner.
+- Detect Python dependency metadata and ask before installing it into a project-specific virtual environment.
+- Offer a Run action for a simple `main.py` or `app.py` entry point after confirmation.
 
-The previous Selkies setup used WebSockets for the encoded video stream. This version switches the default transport to WebRTC so the desktop uses a realtime media transport with UDP/ICE when available and Cloudflare TURN when a relay is required. citeturn0search1
+Project Lab saves project definitions, not installed programs or cloned files. GitHub-hosted runners are temporary, so selected repositories are cloned again in each new session. This first version does not automatically install arbitrary system packages, Docker services, Node projects, or Windows apps.
 
-## Runtime
+### Configure Hugging Face persistence
 
-- Ubuntu GitHub Runner
-- XFCE4
-- Selkies 2.0.0
-- H.264 software encoding
-- Selkies WebRTC transport
-- Cloudflare Calls TURN relay
-- Cloudflare Quick Tunnel for signaling/web access
-- Dynamic browser-fit resolution
-- WebSocket fallback through the Selkies menu
-- No KasmVNC
-- No x11vnc
-- No noVNC
-- No Wine
-- No gaming stack
-- No heavy desktop image
+Add these GitHub Actions repository secrets:
+
+- `HF_TOKEN`: Hugging Face write access token.
+- `HF_DATASET_REPO_ID`: dataset ID, e.g. `YOUR_USERNAME/cloudlab-projects`.
+
+The app creates a private Dataset repository if needed and if the token has permission. Without these secrets, Project Lab runs in local-only mode and its library does not persist between sessions.
+
+Review any repository before installing dependencies or running its code. Third-party install/build scripts can execute arbitrary code.
+
+More details: [Project Lab README](project-lab/README.md).
 
 ## Cloudflare setup
 
-The workflow expects two GitHub repository secrets:
+The desktop workflow also expects:
 
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_API_TOKEN`
 
-The API token needs the Cloudflare Calls Write permission because the workflow creates a temporary TURN key for each desktop session. Cloudflare's TURN API creates a TURN key under the account and requires Calls Write. citeturn3search0
+The Cloudflare API token needs Calls Write permission so the workflow can create a temporary TURN key for the session. The workflow removes that temporary key during cleanup. Keep both Cloudflare values in GitHub Actions Secrets; never commit them to repository files.
 
-The workflow deletes that temporary TURN key during cleanup, so there is no VPS, home device, or always-on relay server involved.
+## Start a desktop session
 
-Do not put the API token in the repository files. Keep it only as a GitHub Actions secret. citeturn1search7
+Open **Actions → CloudLab Desktop → Run workflow** and choose a session duration of 1h, 3h, or 6h. The workflow prints the temporary desktop URL and credentials in the run summary.
 
-## Start
+The CloudLab Project Lab shortcut appears inside the XFCE4 desktop. The existing desktop transport remains Selkies WebRTC with WebSocket fallback available from the Selkies menu.
 
-Actions > NGROK Cloud > Run workflow
+## Experimental status
 
-Choose:
-
-- 1h
-- 3h
-- 6h
-
-The workflow generates a temporary Selkies password for every session and prints the URL and credentials in the workflow summary.
-
-WebRTC is the default transport. WebSocket fallback remains available from the Selkies interface if needed.
+This branch adds Project Lab for testing. It should be validated in a workflow run before merging into the stable branch.
