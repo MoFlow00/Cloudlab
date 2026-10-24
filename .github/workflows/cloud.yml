@@ -32,7 +32,7 @@ env:
 
 jobs:
   desktop:
-    name: Selkies XFCE4 WebRTC
+    name: CloudLab XFCE4 WebRTC
     runs-on: ubuntu-latest
     timeout-minutes: 365
 
@@ -109,6 +109,9 @@ jobs:
           HF_DATASET_REPO_ID: ${{ secrets.HF_DATASET_REPO_ID }}
         run: |
           set -Eeuo pipefail
+
+          PYTHONPYCACHEPREFIX=/tmp/cloudlab-pycache python3 -m py_compile project-lab/app.py
+          bash -n project-lab/launcher.sh
 
           sudo install -d -m 755 /opt/cloudlab
           sudo install -m 644 project-lab/app.py /opt/cloudlab/app.py
