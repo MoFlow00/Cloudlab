@@ -8,6 +8,7 @@ Experimental Project Lab add-on for the current XFCE4/Selkies desktop.
 - Save project definitions to a Hugging Face Dataset repository.
 - Reload the saved library in future GitHub Actions sessions.
 - Clone a selected repository into the temporary session.
+- Record install commands typed in a dedicated CloudLab terminal, review and save them as a per-project recipe, then replay the recipe in later sessions after explicit confirmation.
 - Detect Python dependency metadata and ask before installing into a project-specific virtual environment.
 - Offer a Run action for a simple main.py or app.py entry point, with confirmation.
 - Never run install scripts simply because a URL was saved.
@@ -26,7 +27,8 @@ Without these secrets the app opens in local-only mode; the library will not per
 ## Limitations and safety
 
 - GitHub Actions runners are temporary. This saves project definitions, not installed applications or cloned files. Projects are cloned again in a new session.
-- The first version supports public GitHub repositories and Python dependency manifests. It does not yet automatically install arbitrary system packages, Docker services, Node projects, or Windows apps.
+- Install recipes record commands typed in the dedicated recorder terminal only; they do not capture browser clicks or commands run in other terminals. Review recipes before saving or replaying, never record passwords/API tokens, and expect to edit commands that use session-specific paths or interactive prompts.
+- The generic installer still does not automatically understand every project type. A recorded recipe can replay apt, pip, npm, .deb, and other shell commands, but those commands may require adaptation and can fail in a fresh temporary session.
 - Installing third-party dependencies or running code can execute untrusted code. Review projects and approve each install/run action.
 - Never store Hugging Face tokens in repository files. Use GitHub Actions Secrets.
 
