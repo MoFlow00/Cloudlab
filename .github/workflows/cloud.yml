@@ -1,4 +1,4 @@
-name: NGROK Cloud
+name: CloudLab Desktop
 
 on:
   workflow_dispatch:
@@ -37,6 +37,9 @@ jobs:
     timeout-minutes: 365
 
     steps:
+      - name: Checkout CloudLab Project Lab
+        uses: actions/checkout@v4
+
       - name: Install lightweight desktop
         run: |
           set -Eeuo pipefail
@@ -45,6 +48,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             xfce4 \
             xfce4-terminal \
+            git \
+            python3-tk \
+            python3-venv \
             curl \
             ca-certificates \
             pulseaudio \
@@ -97,6 +103,42 @@ jobs:
           selkies --help >/dev/null
           selkies-session --help >/dev/null
 
+      - name: Install CloudLab Project Lab
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_DATASET_REPO_ID: ${{ secrets.HF_DATASET_REPO_ID }}
+        run: |
+          set -Eeuo pipefail
+
+          sudo install -d -m 755 /opt/cloudlab
+          sudo install -m 644 project-lab/app.py /opt/cloudlab/app.py
+
+          mkdir -p "$HOME/.local/share/cloudlab"
+          python3 -m venv "$HOME/.local/share/cloudlab/venv"
+          "$HOME/.local/share/cloudlab/venv/bin/pip" install --disable-pip-version-check --quiet "huggingface_hub>=0.30,<2"
+
+          sudo tee /usr/local/bin/cloudlab-project-lab >/dev/null <<EOF
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec "$HOME/.local/share/cloudlab/venv/bin/python" /opt/cloudlab/app.py
+          EOF
+          sudo chmod 755 /usr/local/bin/cloudlab-project-lab
+
+          mkdir -p "$HOME/.config/cloudlab"
+          chmod 700 "$HOME/.config/cloudlab"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = Path.home() / ".config/cloudlab/secrets.json"
+          p.write_text(json.dumps({
+              "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
+              "HF_DATASET_REPO_ID": os.environ.get("HF_DATASET_REPO_ID", ""),
+          }), encoding="utf-8")
+          p.chmod(0o600)
+          PY
+
+          echo "CloudLab Project Lab installed. Hugging Face sync is enabled when its GitHub secrets are configured."
+
       - name: Create temporary Cloudflare TURN key
         env:
           CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -116,7 +158,7 @@ jobs:
             "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/calls/turn_keys" \
             -H "Authorization: Bearer ${CF_API_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d '{"name":"NGROK ephemeral WebRTC"}')"
+            -d '{"name":"CloudLab ephemeral WebRTC"}')"
 
           if [[ "$(jq -r '.success' <<<"$TURN_RESPONSE")" != "true" ]]; then
             echo "::error::Cloudflare TURN key creation failed."
@@ -144,6 +186,8 @@ jobs:
           set -Eeuo pipefail
 
           mkdir -p "$HOME/.selkies/logs"
+          mkdir -p "$HOME/Desktop"
+          install -m 755 project-lab/cloudlab-project-lab.desktop "$HOME/Desktop/CloudLab Project Lab.desktop"
 
           PASSWORD="$(openssl rand -hex 12)"
           echo "$PASSWORD" > "$HOME/.selkies/password"
@@ -284,7 +328,7 @@ jobs:
 
           {
             echo "========================================"
-            echo "NGROK CLOUD IS READY"
+            echo "CLOUDLAB IS READY"
             echo "========================================"
             echo "Project     : Selkies"
             echo "Linux       : Ubuntu"
@@ -305,7 +349,7 @@ jobs:
           } | tee /tmp/connection.txt
 
           {
-            echo "### NGROK CLOUD"
+            echo "### CLOUDLAB DESKTOP"
             cat /tmp/connection.txt
           } >> "$GITHUB_STEP_SUMMARY"
 
