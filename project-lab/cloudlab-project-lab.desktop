@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=CloudLab Project Lab
+Comment=Save and prepare GitHub projects
+Exec=/usr/local/bin/cloudlab-project-lab
+Icon=applications-development
+Terminal=false
+Categories=Development;Utility;
