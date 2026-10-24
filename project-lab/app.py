@@ -9,6 +9,7 @@ HOME = Path.home()
 CFG = HOME / ".config/cloudlab"
 SECRETS = CFG / "secrets.json"
 CACHE = CFG / "projects-cache.json"
+RECORDING = CFG / "install-recording.history"
 PROJECTS = HOME / "Projects/CloudLab"
 CFG.mkdir(parents=True, exist_ok=True)
 PROJECTS.mkdir(parents=True, exist_ok=True)
@@ -64,6 +65,9 @@ class App(tk.Tk):
         self.list=tk.Listbox(left,exportselection=False); self.list.pack(fill="both",expand=True,pady=5)
         self.list.bind("<<ListboxSelect>>",lambda _e:self.show_details())
         ttk.Button(left,text="Install / Prepare",command=self.install).pack(fill="x",pady=2)
+        ttk.Button(left,text="Record install",command=self.record_install).pack(fill="x",pady=2)
+        ttk.Button(left,text="Save recorded recipe",command=self.save_recipe).pack(fill="x",pady=2)
+        ttk.Button(left,text="Install from recipe",command=self.install_recipe).pack(fill="x",pady=2)
         ttk.Button(left,text="Run",command=self.run_project).pack(fill="x",pady=2)
         ttk.Button(left,text="Remove from library",command=self.remove).pack(fill="x",pady=2)
         ttk.Label(right,text="Details",font=("Sans",11,"bold")).pack(anchor="w")
@@ -96,7 +100,7 @@ class App(tk.Tk):
         p=self.selected()
         if not p:return
         present=self.path(p).exists()
-        self.box(self.details,f"{p.get('name')}\n\n{p.get('description','')}\n\nURL: {p.get('url')}\nDefault branch: {p.get('default_branch','main')}\nLocal checkout this session: {'yes' if present else 'no'}\n\nInstall / Prepare clones the repository and asks before installing Python dependencies. Run only offers simple Python entry points.")
+        self.box(self.details,f"{p.get('name')}\n\n{p.get('description','')}\n\nURL: {p.get('url')}\nDefault branch: {p.get('default_branch','main')}\nLocal checkout this session: {'yes' if present else 'no'}\n\nInstall / Prepare clones the repository. Record install opens a dedicated terminal that records commands you type there; review them before saving. Install from recipe replays the saved commands with confirmation.")
     def cache(self):
         CACHE.write_text(json.dumps(self.projects,indent=2,ensure_ascii=False)+"\n",encoding="utf-8")
     def add(self):
@@ -184,6 +188,74 @@ class App(tk.Tk):
                     return f"Prepared {dest}\nDependencies installed.\n{out.stdout[-1200:]}"
             return f"Cloned successfully:\n{dest}\nNo dependencies were installed automatically."
         self.worker(work)
+    def record_install(self):
+        p=self.selected()
+        if not p:
+            messagebox.showinfo("Choose project","Select a project first."); return
+        if not messagebox.askyesno("Record install", "A dedicated terminal will open. Run the installation steps for this selected project INSIDE that terminal.\n\nCommands may contain secrets or destructive actions. Do not type passwords or tokens. When finished, close the terminal and choose Save recorded recipe."):
+            return
+        RECORDING.parent.mkdir(parents=True,exist_ok=True)
+        RECORDING.write_text("",encoding="utf-8")
+        # Bash appends each completed interactive command to a plain-text log.
+        # Only commands typed in this dedicated terminal are recorded.
+        script = (
+            "export HISTFILE=/dev/null; set -o history; "
+            "PROMPT_COMMAND='history -a; history 1 | sed -E \\\"s/^ *[0-9]+ *//\\\" >> "
+            + __import__("shlex").quote(str(RECORDING))
+            + "'; "
+            "echo 'CLOUDLAB INSTALL RECORDING ACTIVE'; "
+            "echo 'Type the installation commands here. Do not enter passwords or API tokens.'; "
+            "exec bash --noprofile --norc -i"
+        )
+        # PROMPT_COMMAND must be active in the interactive shell itself.
+        script = "export HISTFILE=/dev/null; export PROMPT_COMMAND=" + __import__("shlex").quote("history 1 | sed -E 's/^ *[0-9]+ *//' >> " + str(RECORDING)) + "; echo 'CLOUDLAB INSTALL RECORDING ACTIVE'; echo 'Run install commands in this terminal. Do not type secrets.'; bash --noprofile --norc -i"
+        try:
+            subprocess.Popen(["xfce4-terminal","--title=CloudLab Install Recorder","--command","bash -lc "+__import__("shlex").quote(script)],start_new_session=True)
+            self.status.set("Recording started. Run installation commands in the new terminal, close it when finished, then save the recipe.")
+        except Exception as e: messagebox.showerror("Recorder failed",str(e))
+
+    def save_recipe(self):
+        p=self.selected()
+        if not p:
+            messagebox.showinfo("Choose project","Select a project first."); return
+        if not RECORDING.exists():
+            messagebox.showinfo("No recording","Choose Record install first and run commands in its terminal."); return
+        lines=[]
+        for line in RECORDING.read_text(encoding="utf-8",errors="replace").splitlines():
+            line=line.strip()
+            if not line or line.startswith("#") or line in {"exit","clear","history"}:
+                continue
+            if line not in lines: lines.append(line)
+        if not lines:
+            messagebox.showinfo("Empty recording","No commands were captured. Make sure you typed the commands in the recorder terminal."); return
+        preview="\\n".join(f"{i+1}. {cmd}" for i,cmd in enumerate(lines))
+        if not messagebox.askyesno("Review install recipe",f"Save {len(lines)} captured command(s) for {p.get('name')}?\\n\\n{preview[:3500]}\\n\\nReview carefully: commands can contain paths, destructive actions, or secrets."):
+            return
+        p["install_recipe"]=lines
+        p["recipe_updated"]="manual-recording"
+        self.cache()
+        self.status.set(f"Saved {len(lines)} install command(s) locally. Click Save to My Projects to persist across sessions.")
+        self.logline(f"Saved recipe for {p.get('name')}: {len(lines)} commands.")
+
+    def install_recipe(self):
+        p=self.selected()
+        if not p:
+            messagebox.showinfo("Choose project","Select a project first."); return
+        recipe=p.get("install_recipe") or []
+        if not recipe:
+            messagebox.showinfo("No recipe","This project has no saved install recipe yet. Use Record install first."); return
+        preview="\\n".join(f"{i+1}. {cmd}" for i,cmd in enumerate(recipe))
+        if not messagebox.askyesno("Replay install recipe",f"Replay {len(recipe)} recorded command(s) for {p.get('name')}?\\n\\n{preview[:3500]}\\n\\nOnly continue if you trust and recognize every command. Some commands may need edits for a new session."):
+            return
+        # Commands are saved as data and only run after an explicit user confirmation.
+        recipe_file=CFG / "replay-install-recipe.sh"
+        recipe_file.write_text("#!/usr/bin/env bash\\nset -e\\n" + "\\n".join(recipe) + "\\n",encoding="utf-8")
+        recipe_file.chmod(0o700)
+        try:
+            subprocess.Popen(["xfce4-terminal","--hold","--command","bash -lc "+__import__("shlex").quote("bash "+__import__("shlex").quote(str(recipe_file))+"; rc=$?; echo; echo 'Recipe finished with exit code' $rc; exec bash -i")],start_new_session=True)
+            self.status.set("Install recipe launched in a terminal.")
+        except Exception as e: messagebox.showerror("Recipe failed",str(e))
+
     def run_project(self):
         p=self.selected()
         if not p:messagebox.showinfo("Choose project","Select a project first.");return
