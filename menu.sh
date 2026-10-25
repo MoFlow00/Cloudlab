@@ -16,10 +16,30 @@ program_name() {
 }
 
 install_pdfcraft() {
-  echo
-  echo "PDFCraft installer is not configured yet."
-  echo "Add the verified installation steps inside install_pdfcraft() in menu.sh."
-  return 2
+  local downloads="$HOME/Downloads"
+  local package="$downloads/pdfcraft-0.13.0-linux-x86_64.deb"
+  local url="https://github.com/storytold/pdfcraft/releases/download/v0.13.0/pdfcraft-0.13.0-linux-x86_64.deb"
+
+  mkdir -p "$downloads"
+  sudo apt-get update
+  sudo apt-get install -y wget ca-certificates
+
+  if [[ ! -s "$package" ]]; then
+    wget -O "$package.part" "$url"
+    mv "$package.part" "$package"
+  else
+    echo "Using existing package: $package"
+  fi
+
+  # Install the local DEB and let apt resolve its dependencies.
+  sudo apt-get install -y "$package"
+  sudo apt-get install -y libxkbcommon-x11-0 libxcb-xkb1
+
+  if ! dpkg-query -W -f='${Status}' pdfcraft 2>/dev/null | grep -q 'install ok installed'; then
+    echo "PDFCraft package verification failed."
+    return 1
+  fi
+  echo "PDFCraft package is installed."
 }
 
 install_gridcraft() {
