@@ -114,10 +114,12 @@ jobs:
           PYTHONPYCACHEPREFIX=/tmp/cloudlab-pycache python3 -m py_compile project-lab/app.py
           bash -n project-lab/launcher.sh
           bash -n menu.sh
+          for installer in installers/*.sh; do bash -n "$installer"; done
 
-          sudo install -d -m 755 /opt/cloudlab
+          sudo install -d -m 755 /opt/cloudlab/installers
           sudo install -m 644 project-lab/app.py /opt/cloudlab/app.py
           sudo install -m 755 menu.sh /opt/cloudlab/menu.sh
+          sudo install -m 644 installers/*.sh /opt/cloudlab/installers/
           sudo tee /usr/local/bin/menu >/dev/null <<'EOF'
           #!/usr/bin/env bash
           exec bash /opt/cloudlab/menu.sh "$@"
