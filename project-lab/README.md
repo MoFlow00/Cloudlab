@@ -40,3 +40,7 @@ Without these secrets the app opens in local-only mode; the library will not per
 - [ ] Configure Hugging Face secrets and save the library.
 - [ ] Start a new session and confirm saved projects appear.
 - [ ] Clone a small trusted Python repository and test dependency installation.
+
+## Numbered software menu
+
+The repository root `menu.sh` is installed as the `menu` command in the CloudLab desktop. Run `menu` in a terminal to open the numbered list. Add programs to `PROGRAM_IDS` and define a matching `install_<id>()` function with tested install commands. PDFCraft and GridCraft are listed as placeholders until their exact installation steps are added. The menu reports non-zero exits as failures; it does not claim a failed install succeeded.
