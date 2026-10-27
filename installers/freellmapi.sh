@@ -7,7 +7,7 @@ set -Eeuo pipefail
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker is required. Installing Ubuntu's Docker engine and Compose plugin..."
   sudo apt-get update
-  sudo apt-get install -y docker.io docker-compose-v2 openssl git
+  sudo apt-get install -y docker.io docker-compose-v2 openssl git curl
 fi
 
 if ! sudo docker info >/dev/null 2>&1; then
@@ -33,9 +33,24 @@ if [[ ! -f .env ]]; then
   chmod 600 .env
 fi
 
+echo "Starting FreeLLMAPI..."
 sudo docker compose up -d
+
 echo
-echo "FreeLLMAPI started (if the container became healthy)."
-echo "Dashboard: http://127.0.0.1:3001"
-echo "Add provider API keys in the dashboard. Providers control their own free-tier availability and limits."
-echo "CloudLab sessions are temporary; back up ~/freellmapi/.env and data if you need persistence."
+echo "========================================"
+echo "FreeLLMAPI start command completed."
+echo "========================================"
+echo "Open the CloudLab desktop browser and visit:"
+echo "  http://127.0.0.1:3001"
+echo
+echo "If the dashboard does not open, check service status:"
+echo "  cd ~/freellmapi && sudo docker compose ps"
+echo "View recent logs:"
+echo "  cd ~/freellmapi && sudo docker compose logs --tail=100"
+echo "Start it again later in this same session:"
+echo "  cd ~/freellmapi && sudo docker compose up -d"
+echo "Stop it:"
+echo "  cd ~/freellmapi && sudo docker compose down"
+echo
+echo "Add provider API keys inside the dashboard. Provider free-tier availability and limits are controlled by each provider."
+echo "CloudLab sessions are temporary; back up ~/freellmapi/.env and any app data you need to keep."
