@@ -1,30 +1,28 @@
 # APP_NAME=FreeLLMAPI - Local AI Gateway
 # Official project: https://github.com/tashfeenahmed/freellmapi
-# Requires Docker; config and provider keys are stored in ~/freellmapi.
+# Requires Docker; configuration is stored under ~/freellmapi.
 
 set -Eeuo pipefail
 
 if ! command -v docker >/dev/null 2>&1; then
-  echo "Docker is not installed. Installing Ubuntu's Docker engine and Compose plugin..."
+  echo "Docker is required. Installing Ubuntu's Docker engine and Compose plugin..."
   sudo apt-get update
-  sudo apt-get install -y docker.io docker-compose-v2 openssl
+  sudo apt-get install -y docker.io docker-compose-v2 openssl git
 fi
 
 if ! sudo docker info >/dev/null 2>&1; then
-  echo "Docker daemon is unavailable. Attempting to start it for this session..."
+  echo "Attempting to start Docker for this session..."
   sudo service docker start || true
 fi
 
 if ! sudo docker info >/dev/null 2>&1; then
-  echo "Docker is not usable in this CloudLab session."
-  echo "FreeLLMAPI needs a running Docker daemon; containerized services may not be supported here."
+  echo "Docker daemon is unavailable in this CloudLab environment."
+  echo "FreeLLMAPI cannot run without Docker. No configuration was changed."
   exit 1
 fi
 
 if [[ ! -d "$HOME/freellmapi" ]]; then
   git clone --depth 1 https://github.com/tashfeenahmed/freellmapi.git "$HOME/freellmapi"
-else
-  echo "Existing $HOME/freellmapi directory found; leaving its configuration intact."
 fi
 
 cd "$HOME/freellmapi"
@@ -37,7 +35,7 @@ fi
 
 sudo docker compose up -d
 echo
-echo "FreeLLMAPI startup requested."
-echo "Try the dashboard at http://127.0.0.1:3001"
-echo "Add provider API keys in the dashboard; free tiers and quotas are controlled by each provider."
-echo "NOTE: CloudLab sessions are temporary. Back up ~/freellmapi/.env and its data if you need persistence."
+echo "FreeLLMAPI started (if the container became healthy)."
+echo "Dashboard: http://127.0.0.1:3001"
+echo "Add provider API keys in the dashboard. Providers control their own free-tier availability and limits."
+echo "CloudLab sessions are temporary; back up ~/freellmapi/.env and data if you need persistence."
