@@ -121,6 +121,21 @@ jobs:
           EOF
           chmod 644 "$HOME/.local/share/applications/cloudlab-software-menu.desktop"
 
+      - name: Install curated CloudLab app catalog and compatibility tools
+        run: |
+          set -Eeuo pipefail
+
+          # Check shell syntax before copying any curated installer into the session.
+          for installer in installers/*.sh; do bash -n "$installer"; done
+
+          echo "Curated installers available:"
+          for installer in installers/*.sh; do
+            sed -n 's/^# APP_NAME=//p' "$installer" | head -n 1
+          done
+
+          # Keep Store/compatibility installs on demand from the CloudLab menu.
+          # Do not preinstall Wine, Docker, SDKs or large runtimes into every session.
+
       - name: Install CloudLab Project Lab
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
