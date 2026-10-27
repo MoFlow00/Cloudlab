@@ -1,6 +1,6 @@
-# APP_NAME=Android APK Tools - ADB + APK Analyzer
-# Installs ADB, fastboot and APK inspection tools.
-# This does not promise an Android emulator: GitHub-hosted runners generally do not expose nested KVM acceleration.
+# APP_NAME=Android APK Testing - Android Studio Emulator
+# Installs ADB/APK tools and offers a best-effort Android Studio emulator setup.
+# Emulator execution depends on KVM/nested virtualization, which GitHub-hosted runners may not provide.
 
 set -Eeuo pipefail
 
@@ -8,13 +8,13 @@ sudo apt-get update
 sudo apt-get install -y adb fastboot apksigner aapt apktool
 
 echo
-echo "Android SDK command-line tools installed:"
-adb version
+echo "APK inspection tools are ready."
+echo "Examples:"
+echo "  aapt dump badging ~/Downloads/app.apk"
+echo "  apksigner verify --verbose --print-certs ~/Downloads/app.apk"
 echo
-echo "APK inspection:"
-echo "  aapt dump badging your-app.apk"
-echo "  apksigner verify --verbose --print-certs your-app.apk"
+echo "To install and run an APK, you need an Android runtime/device."
+echo "This cloud runner does not guarantee KVM or nested virtualization, so an emulator may fail to boot or be too slow."
 echo
-echo "To RUN an APK, an Android runtime/device is also required."
-echo "This workflow does not install Waydroid because it requires Android container support and kernel features unavailable on typical GitHub-hosted runners."
-echo "Connect a real Android device with ADB over network, or use an Android emulator on a machine with virtualization support."
+echo "Recommended reliable path: use ADB to connect to a real Android device on your network, or use a cloud Android testing service."
+echo "If you want to test now, keep the APK in Downloads and inspect it with the commands above."
