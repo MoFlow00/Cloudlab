@@ -131,25 +131,20 @@ jobs:
           echo "GNOME Software is installed and Flathub is enabled."
           echo "Open Software from the Applications menu to browse available apps."
 
-      - name: Install basic Wine and Android APK testing tools
+      - name: Install Android APK inspection tools
         run: |
           set -Eeuo pipefail
-
-          # Install only basic 64-bit Wine and APK inspection/ADB tools.
-          # 32-bit games can require more packages; add them on demand in the menu installer.
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            wine64 \
             adb \
             fastboot \
             apksigner \
             aapt \
             apktool
-
-          command -v wine || command -v wine64
           command -v adb
-          echo "Basic Wine and Android APK testing tools installed."
-          echo "An Android runtime/emulator is not bundled because nested virtualization is not guaranteed on GitHub-hosted runners."
+          echo "Android APK inspection tools installed."
+          echo "A runtime/emulator is not included; GitHub-hosted runners do not guarantee nested virtualization."
+
 
       - name: Install CloudLab Project Lab
         env:
