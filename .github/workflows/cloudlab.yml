@@ -131,14 +131,15 @@ jobs:
           echo "GNOME Software is installed and Flathub is enabled."
           echo "Open Software from the Applications menu to browse available apps."
 
-      - name: Install Wine and Android APK testing prerequisites
+      - name: Install Wine and Android APK testing tools
         run: |
           set -Eeuo pipefail
 
-          # Install Wine now; APK tools are available as a separate optional menu item.
+          # These are useful for compatibility/testing, but an Android runtime is optional
+          # and is intentionally not installed on the GitHub-hosted runner.
           sudo dpkg --add-architecture i386
           sudo apt-get update -qq
-          sudo apt-get install -y --install-recommends \
+          sudo apt-get install -y --no-install-recommends \
             wine \
             wine64 \
             wine32 \
