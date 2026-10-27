@@ -56,9 +56,7 @@ jobs:
             ca-certificates \
             pulseaudio \
             openssl \
-            jq \
-            nodejs \
-            npm
+            jq
 
           SELKIES_VERSION="2.0.0"
 
