@@ -56,7 +56,9 @@ jobs:
             ca-certificates \
             pulseaudio \
             openssl \
-            jq
+            jq \
+            nodejs \
+            npm
 
           SELKIES_VERSION="2.0.0"
 
@@ -130,6 +132,29 @@ jobs:
 
           echo "GNOME Software is installed and Flathub is enabled."
           echo "Open Software from the Applications menu to browse available apps."
+
+      - name: Install Wine and Android APK testing prerequisites
+        run: |
+          set -Eeuo pipefail
+
+          # Install Wine now; APK tools are available as a separate optional menu item.
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -qq
+          sudo apt-get install -y --install-recommends \
+            wine \
+            wine64 \
+            wine32 \
+            winetricks \
+            adb \
+            fastboot \
+            apksigner \
+            aapt \
+            apktool
+
+          command -v wine
+          command -v adb
+          echo "Wine and Android APK inspection tools installed."
+          echo "An Android runtime/emulator is not bundled because nested virtualization is not guaranteed on GitHub-hosted runners."
 
       - name: Install CloudLab Project Lab
         env:
