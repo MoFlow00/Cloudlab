@@ -104,33 +104,22 @@ jobs:
           selkies --help >/dev/null
           selkies-session --help >/dev/null
 
-      - name: Install desktop software store (GNOME Software + Flathub)
+      - name: Add desktop launchers for CloudLab tools
         run: |
           set -Eeuo pipefail
-
-          # A real graphical software center for browsing/installing Ubuntu packages
-          # and Flatpak apps. Keep this separate from CloudLab's curated installers.
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            gnome-software \
-            gnome-software-plugin-flatpak \
-            flatpak \
-            xdg-desktop-portal \
-            xdg-desktop-portal-gtk
-
-          # Enable the official Flathub catalog for a much wider selection of apps.
-          if ! flatpak remote-list --system | awk '{print $1}' | grep -qx flathub; then
-            sudo flatpak remote-add --system --if-not-exists flathub \
-              https://flathub.org/repo/flathub.flatpakrepo
-          fi
-
-          # Verify the store package and Flatpak catalog are present.
-          dpkg-query -W -f='${Status}' gnome-software 2>/dev/null | grep -q 'install ok installed'
-          flatpak remote-list --system | awk '{print $1}' | grep -qx flathub
-
-          echo "GNOME Software is installed and Flathub is enabled."
-          echo "Open Software from the Applications menu to browse available apps."
-
+          mkdir -p "$HOME/.local/share/applications"
+          cat > "$HOME/.local/share/applications/cloudlab-software-menu.desktop" <<'EOF'
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=CloudLab Software Lab
+          Comment=Install CloudLab tools, utilities and runtimes
+          Exec=xfce4-terminal --hold --command=/usr/local/bin/menu
+          Icon=applications-system
+          Terminal=false
+          Categories=System;Utility;
+          EOF
+          chmod 644 "$HOME/.local/share/applications/cloudlab-software-menu.desktop"
 
       - name: Install CloudLab Project Lab
         env:
