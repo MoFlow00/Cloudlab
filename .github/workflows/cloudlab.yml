@@ -104,67 +104,32 @@ jobs:
           selkies --help >/dev/null
           selkies-session --help >/dev/null
 
-      - name: Install Komi Store (GitHub app store)
+      - name: Install desktop software store (GNOME Software + Flathub)
         run: |
           set -Eeuo pipefail
 
-          # Prefer the official Debian package for Ubuntu. Fall back to the
-          # official x86_64 AppImage if the release does not publish a .deb.
-          RELEASE_JSON="$(curl -fsSL --retry 5 --retry-all-errors \
-            https://api.github.com/repos/komi-store/komi-store/releases/latest)"
+          # A real graphical software center for browsing/installing Ubuntu packages
+          # and Flatpak apps. Keep this separate from CloudLab's curated installers.
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gnome-software \
+            gnome-software-plugin-flatpak \
+            flatpak \
+            xdg-desktop-portal \
+            xdg-desktop-portal-gtk
 
-          ASSET_URL="$(jq -r '
-            [.assets[] | select(.name | test("\\.deb$"; "i"))
-              | select(.name | test("(amd64|x86_64|x64)"; "i"))
-              | .browser_download_url][0] // empty
-          ' <<<"$RELEASE_JSON")"
-
-          if [[ -n "$ASSET_URL" ]]; then
-            PACKAGE="/tmp/$(basename "$ASSET_URL")"
-            curl -fL --retry 5 --retry-all-errors -o "$PACKAGE" "$ASSET_URL"
-            sudo apt-get install -y "$PACKAGE"
-          else
-            ASSET_URL="$(jq -r '
-              [.assets[] | select(.name | test("\\.AppImage$"; "i"))
-                | select(.name | test("(x86_64|x64)"; "i"))
-                | .browser_download_url][0] // empty
-            ' <<<"$RELEASE_JSON")"
-
-            if [[ -z "$ASSET_URL" ]]; then
-              echo "::error::No official x86_64 .deb or AppImage found in the latest Komi Store release."
-              exit 1
-            fi
-
-            sudo apt-get install -y --no-install-recommends libfuse2
-            sudo install -d -m 755 /opt/komi-store
-            sudo curl -fL --retry 5 --retry-all-errors \
-              -o /opt/komi-store/Komi-Store.AppImage "$ASSET_URL"
-            sudo chmod 755 /opt/komi-store/Komi-Store.AppImage
-
-            sudo tee /usr/local/bin/komi-store >/dev/null <<'EOF'
-          #!/usr/bin/env bash
-          exec /opt/komi-store/Komi-Store.AppImage "$@"
-          EOF
-            sudo chmod 755 /usr/local/bin/komi-store
-
-            sudo tee /usr/share/applications/komi-store.desktop >/dev/null <<'EOF'
-          [Desktop Entry]
-          Name=Komi Store
-          Comment=Browse and install apps published on GitHub
-          Exec=/usr/local/bin/komi-store
-          Terminal=false
-          Type=Application
-          Categories=Development;Utility;
-          EOF
+          # Enable the official Flathub catalog for a much wider selection of apps.
+          if ! flatpak remote-list --system | awk '{print $1}' | grep -qx flathub; then
+            sudo flatpak remote-add --system --if-not-exists flathub \
+              https://flathub.org/repo/flathub.flatpakrepo
           fi
 
-          if ! command -v komi-store >/dev/null 2>&1 && ! dpkg-query -W -f='${Status}' komi-store 2>/dev/null | grep -q 'install ok installed'; then
-            echo "::error::Komi Store installation could not be verified."
-            exit 1
-          fi
+          # Verify the store package and Flatpak catalog are present.
+          dpkg-query -W -f='${Status}' gnome-software 2>/dev/null | grep -q 'install ok installed'
+          flatpak remote-list --system | awk '{print $1}' | grep -qx flathub
 
-          echo "Komi Store installation step completed."
-          echo "Note: Komi Store installs third-party release assets; review each project before installing."
+          echo "GNOME Software is installed and Flathub is enabled."
+          echo "Open Software from the Applications menu to browse available apps."
 
       - name: Install CloudLab Project Lab
         env:
