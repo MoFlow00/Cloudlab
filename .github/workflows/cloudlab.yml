@@ -226,6 +226,23 @@ jobs:
 
           echo "Cloudflare TURN key created for this session."
 
+      - name: Add CloudLab tools launcher to XFCE menu
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$HOME/.local/share/applications"
+          cat > "$HOME/.local/share/applications/cloudlab-software-menu.desktop" <<'EOF'
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=CloudLab Software Lab
+          Comment=Install CloudLab apps and runtimes
+          Exec=xfce4-terminal --hold -e /usr/local/bin/menu
+          Icon=applications-system
+          Terminal=false
+          Categories=System;Utility;
+          EOF
+          chmod 644 "$HOME/.local/share/applications/cloudlab-software-menu.desktop"
+
       - name: Start Selkies desktop
         run: |
           set -Eeuo pipefail
