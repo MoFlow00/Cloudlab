@@ -98,10 +98,10 @@ jobs:
           {
             echo "## CloudLab Linux RDP"
             echo
-            echo "- Address: `$TAILSCALE_IP`"
-            echo "- Port: `3389`"
-            echo "- Username: `$RDP_USER`"
-            echo "- Password: `$RDP_PASS`"
+            echo "- Address: \`$TAILSCALE_IP\`"
+            echo "- Port: \`3389\`"
+            echo "- Username: \`$RDP_USER\`"
+            echo "- Password: \`$RDP_PASS\`"
             echo "- Session: choose **Xorg**, not Xvnc."
             echo
             echo "Connect only while your device is logged into the same Tailscale network."
