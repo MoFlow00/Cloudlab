@@ -134,4 +134,5 @@ jobs:
         run: |
           sudo tailscale down || true
           sudo systemctl stop xrdp || true
-          sudo userdel -r cloudlab || true
+          sudo userdel cloudlab 2>/dev/null || true
+          sudo rm -rf /home/cloudlab
