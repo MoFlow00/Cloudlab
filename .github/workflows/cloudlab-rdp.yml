@@ -115,10 +115,11 @@ jobs:
 
           # Check actual executable names; package does not provide a binary named "xfconf".
           command -v xfconf-query
-          command -v xfconfd
           command -v startxfce4
           command -v dbus-launch
           test -d /etc/xdg
+          # xfconfd is installed under the XFCE libexec directory, not necessarily on PATH.
+          test -x /usr/lib/xfce4/xfconf/xfconfd
 
           sudo sed -i \
             -e 's/^max_bpp=.*/max_bpp=16/' \
