@@ -54,8 +54,6 @@ jobs:
             echo "::error::Missing repository secret RDP_PASSWORD."
             exit 1
           }
-          # Tailscale device auth keys normally start with tskey-auth-.
-          # Reject API keys or other credentials before calling Tailscale.
           if [[ "$TS_AUTHKEY" != tskey-auth-* ]]; then
             echo "::error::TS_AUTHKEY does not look like a Tailscale device auth key. Generate a device auth key in the Tailscale admin console; do not use a Tailscale API key."
             exit 1
@@ -72,18 +70,17 @@ jobs:
           set -Eeuo pipefail
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            xfce4-session xfce4-panel xfce4-settings xfdesktop4 thunar \
-            xfce4-terminal dbus-x11 xorgxrdp xrdp pulseaudio \
+            xfce4 xfce4-session xfce4-panel xfce4-settings xfdesktop4 thunar \
+            xfce4-terminal dbus-x11 dbus-user-session xorgxrdp xrdp pulseaudio \
             ca-certificates curl wget gnupg
 
-          # Install Google Chrome from Google's official Linux package.
           curl -fsSL --retry 3 --retry-all-errors \
             https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
             -o /tmp/google-chrome.deb
           sudo apt-get install -y --no-install-recommends /tmp/google-chrome.deb
           rm -f /tmp/google-chrome.deb
 
-          # Disable desktop effects and keep remote color depth low.
+          # Disable compositor effects for a lightweight remote session.
           sudo install -d -m 755 /etc/xdg/xfce4/xfconf/xfce-perchannel-xml
           sudo tee /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml >/dev/null <<'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -102,7 +99,18 @@ jobs:
           fi
           printf 'cloudlab:%s\n' "$RDP_PASSWORD" | sudo chpasswd
           sudo install -d -o cloudlab -g cloudlab -m 700 /home/cloudlab
-          sudo -u cloudlab bash -lc 'printf "%s\n" "startxfce4" > ~/.xsession && chmod 600 ~/.xsession'
+
+          # Explicit XDG paths and a private D-Bus session prevent XFCE failsafe-session errors.
+          sudo tee /home/cloudlab/.xsession >/dev/null <<'EOF'
+          #!/bin/sh
+          unset DBUS_SESSION_BUS_ADDRESS
+          unset XDG_RUNTIME_DIR
+          export XDG_CONFIG_DIRS="/etc/xdg"
+          export XDG_DATA_DIRS="/usr/local/share:/usr/share"
+          exec dbus-run-session -- startxfce4
+          EOF
+          sudo chown cloudlab:cloudlab /home/cloudlab/.xsession
+          sudo chmod 700 /home/cloudlab/.xsession
           sudo usermod -aG audio cloudlab || true
 
           sudo sed -i \
@@ -110,9 +118,13 @@ jobs:
             -e 's/^xserverbpp=.*/xserverbpp=16/' \
             -e 's/^use_fastpath=.*/use_fastpath=both/' \
             /etc/xrdp/xrdp.ini
+
+          # Validate the XFCE session launcher before exposing RDP.
+          command -v dbus-run-session
+          command -v startxfce4
+          test -d /etc/xdg
           sudo systemctl enable xrdp
           sudo systemctl restart xrdp
-
           google-chrome --version
           xrdp --version
 
@@ -149,11 +161,10 @@ jobs:
             echo "- **RDP port:** \`3389\`"
             echo "- **RDP username:** \`cloudlab\`"
             echo "- **RDP password:** Use the GitHub secret RDP_PASSWORD"
-            echo "- **Desktop:** XFCE4"
+            echo "- **Desktop:** XFCE4 (compositing disabled)"
             echo "- **Browser:** Google Chrome"
-            echo "- **Suggested resolution:** 1280x720"
+            echo "- **Suggested resolution:** 1280x720, 16-bit color"
           } >> "$GITHUB_STEP_SUMMARY"
-
           echo "RDP service is active; connection details are in the workflow summary."
 
       - name: Keep session alive
@@ -170,6 +181,7 @@ jobs:
         run: |
           sudo systemctl status xrdp --no-pager || true
           sudo journalctl -u xrdp --no-pager -n 100 || true
+          sudo tail -n 100 /home/cloudlab/.xsession-errors 2>/dev/null || true
           tailscale status || true
 
       - name: Cleanup
