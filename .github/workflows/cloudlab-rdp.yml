@@ -70,7 +70,7 @@ jobs:
           set -Eeuo pipefail
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            xfce4 xfce4-session xfce4-panel xfce4-settings xfdesktop4 thunar \
+            xfce4 xfce4-session xfce4-panel xfce4-settings xfconf xfdesktop4 thunar \
             xfce4-terminal dbus-x11 dbus-user-session xorgxrdp xrdp pulseaudio \
             ca-certificates curl wget gnupg
 
@@ -80,7 +80,6 @@ jobs:
           sudo apt-get install -y --no-install-recommends /tmp/google-chrome.deb
           rm -f /tmp/google-chrome.deb
 
-          # Disable compositor effects for a lightweight remote session.
           sudo install -d -m 755 /etc/xdg/xfce4/xfconf/xfce-perchannel-xml
           sudo tee /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml >/dev/null <<'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -98,31 +97,37 @@ jobs:
             sudo useradd --create-home --shell /bin/bash cloudlab
           fi
           printf 'cloudlab:%s\n' "$RDP_PASSWORD" | sudo chpasswd
-          sudo install -d -o cloudlab -g cloudlab -m 700 /home/cloudlab
+          sudo install -d -o cloudlab -g cloudlab -m 700 /home/cloudlab/.cache /home/cloudlab/.config
+          sudo chown -R cloudlab:cloudlab /home/cloudlab
+          sudo usermod -aG audio cloudlab || true
 
-          # Explicit XDG paths and a private D-Bus session prevent XFCE failsafe-session errors.
+          # Use the standard Xsession -> ~/.xsession path; let Xsession manage D-Bus.
           sudo tee /home/cloudlab/.xsession >/dev/null <<'EOF'
           #!/bin/sh
           unset DBUS_SESSION_BUS_ADDRESS
           unset XDG_RUNTIME_DIR
           export XDG_CONFIG_DIRS="/etc/xdg"
           export XDG_DATA_DIRS="/usr/local/share:/usr/share"
-          exec dbus-run-session -- startxfce4
+          exec startxfce4
           EOF
           sudo chown cloudlab:cloudlab /home/cloudlab/.xsession
           sudo chmod 700 /home/cloudlab/.xsession
-          sudo usermod -aG audio cloudlab || true
+
+          # Ensure xrdp uses the system Xsession launcher and captures session errors.
+          sudo grep -q '/etc/X11/Xsession' /etc/xrdp/startwm.sh || {
+            echo "::error::Unexpected xrdp startwm.sh; refusing to overwrite it blindly."
+            exit 1
+          }
+          command -v xfconf
+          command -v xfconfd
+          command -v startxfce4
+          command -v dbus-launch
 
           sudo sed -i \
             -e 's/^max_bpp=.*/max_bpp=16/' \
             -e 's/^xserverbpp=.*/xserverbpp=16/' \
             -e 's/^use_fastpath=.*/use_fastpath=both/' \
             /etc/xrdp/xrdp.ini
-
-          # Validate the XFCE session launcher before exposing RDP.
-          command -v dbus-run-session
-          command -v startxfce4
-          test -d /etc/xdg
           sudo systemctl enable xrdp
           sudo systemctl restart xrdp
           google-chrome --version
@@ -182,6 +187,7 @@ jobs:
           sudo systemctl status xrdp --no-pager || true
           sudo journalctl -u xrdp --no-pager -n 100 || true
           sudo tail -n 100 /home/cloudlab/.xsession-errors 2>/dev/null || true
+          sudo find /home/cloudlab/.cache/sessions -maxdepth 1 -type f -print -exec tail -n 80 {} \; 2>/dev/null || true
           tailscale status || true
 
       - name: Cleanup
