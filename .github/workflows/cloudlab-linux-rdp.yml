@@ -34,8 +34,10 @@ jobs:
             exit 1
           fi
           sudo apt-get update -qq
+          
+          # إضافة xfce4-session صراحة لضمان وجود حزم الجلسة
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            xfce4 xfce4-terminal xrdp xorgxrdp dbus-x11 xauth x11-xserver-utils \
+            xfce4 xfce4-session xfce4-terminal xrdp xorgxrdp dbus-x11 xauth x11-xserver-utils \
             curl ca-certificates openssl
           sudo adduser xrdp ssl-cert || true
 
@@ -48,16 +50,23 @@ jobs:
           echo "$RDP_USER:$RDP_PASS" | sudo chpasswd
           sudo usermod -aG ssl-cert "$RDP_USER"
 
-          sudo -u "$RDP_USER" bash -c 'cat <<EOF > "$HOME/.xsession"
+          # استبدال ملف بدء جلسة XRDP الافتراضي بالكامل لفرض إعدادات XFCE4 الصحيحة
+          cat << 'EOF' | sudo tee /etc/xrdp/startwm.sh
+          #!/bin/sh
+          if [ -r /etc/default/locale ]; then
+            . /etc/default/locale
+            export LANG LANGUAGE
+          fi
           export XDG_SESSION_DESKTOP=xfce
           export XDG_CURRENT_DESKTOP=XFCE
           export XDG_CONFIG_DIRS=/etc/xdg:/etc
           exec dbus-launch --exit-with-session startxfce4
-          EOF'
-          sudo chown "$RDP_USER:$RDP_USER" "/home/$RDP_USER/.xsession"
-          sudo chmod 600 "/home/$RDP_USER/.xsession"
+          EOF
+          sudo chmod +x /etc/xrdp/startwm.sh
 
-          # Use XRDP's Xorg backend, not the VNC backend that failed.
+          # إزالة إعدادات VNC تماماً من XRDP لجعل Xorg الخيار الوحيد والإجباري
+          sudo sed -i '/\[Xvnc\]/,/\[vnc-any\]/d' /etc/xrdp/xrdp.ini
+
           sudo systemctl enable xrdp
           sudo systemctl restart xrdp
           sleep 3
@@ -113,7 +122,7 @@ jobs:
             echo "- Port: \`3389\`"
             echo "- Username: \`$RDP_USER\`"
             echo "- Password: use the repository Actions secret RDP_PASSWORD"
-            echo "- Session: choose **Xorg**, not Xvnc."
+            echo "- Session: **Xorg**"
             echo
             echo "Connect only while your device is logged into the same Tailscale network."
           } >> "$GITHUB_STEP_SUMMARY"
