@@ -24,33 +24,30 @@ jobs:
 
     steps:
       - name: Install XFCE4, XRDP and Xorg backend
-        env:
-          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
         shell: bash
         run: |
           set -Eeuo pipefail
-          if [[ -z "${RDP_PASSWORD:-}" || ${#RDP_PASSWORD} -lt 16 ]]; then
-            echo "::error::Add repository Actions secret RDP_PASSWORD with at least 16 characters."
-            exit 1
-          fi
           sudo apt-get update -qq
           
-          # إضافة xfce4-session صراحة لضمان وجود حزم الجلسة
+          # تثبيت الواجهة والأدوات الأساسية
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             xfce4 xfce4-session xfce4-terminal xrdp xorgxrdp dbus-x11 xauth x11-xserver-utils \
             curl ca-certificates openssl
           sudo adduser xrdp ssl-cert || true
 
+          # تحديد يوزر وباسورد ثابتين لتسهيل الدخول (بدون Secrets)
           RDP_USER="cloudlab"
-          RDP_PASS="$RDP_PASSWORD"
+          RDP_PASS="cloudlab"
+          
           if id "$RDP_USER" >/dev/null 2>&1; then
             sudo userdel -r "$RDP_USER" || true
           fi
           sudo useradd -m -s /bin/bash "$RDP_USER"
           echo "$RDP_USER:$RDP_PASS" | sudo chpasswd
           sudo usermod -aG ssl-cert "$RDP_USER"
+          sudo usermod -aG sudo "$RDP_USER"
 
-          # استبدال ملف بدء جلسة XRDP الافتراضي بالكامل لفرض إعدادات XFCE4 الصحيحة
+          # فرض إعدادات XDG لتشغيل الواجهة بشكل صحيح
           cat << 'EOF' | sudo tee /etc/xrdp/startwm.sh
           #!/bin/sh
           if [ -r /etc/default/locale ]; then
@@ -64,23 +61,26 @@ jobs:
           EOF
           sudo chmod +x /etc/xrdp/startwm.sh
 
-          # إزالة إعدادات VNC تماماً من XRDP لجعل Xorg الخيار الوحيد والإجباري
-          sudo sed -i '/\[Xvnc\]/,/\[vnc-any\]/d' /etc/xrdp/xrdp.ini
+          # مسح كل الجلسات المعقدة وإنشاء جلسة Xorg واحدة تعمل بتسجيل دخول تلقائي
+          sudo sed -i '/^\[Xorg\]/,$d' /etc/xrdp/xrdp.ini
+          cat <<EOF | sudo tee -a /etc/xrdp/xrdp.ini
+          [Xorg]
+          name=Xorg AutoLogin
+          lib=libxup.so
+          username=$RDP_USER
+          password=$RDP_PASS
+          ip=127.0.0.1
+          port=-1
+          code=20
+          EOF
 
           sudo systemctl enable xrdp
           sudo systemctl restart xrdp
           sleep 3
           sudo ss -lntp | grep ':3389' || {
             echo "::error::XRDP did not open TCP port 3389."
-            sudo journalctl -u xrdp --no-pager -n 80 || true
             exit 1
           }
-
-          echo "::add-mask::$RDP_PASS"
-          {
-            echo "RDP_USER=$RDP_USER"
-            echo "RDP_PASS=$RDP_PASS"
-          } >> "$GITHUB_ENV"
 
       - name: Connect runner to Tailscale
         env:
@@ -119,15 +119,13 @@ jobs:
             echo "## CloudLab Linux RDP"
             echo
             echo "- Address: \`$TAILSCALE_IP\`"
-            echo "- Port: \`3389\`"
-            echo "- Username: \`$RDP_USER\`"
-            echo "- Password: use the repository Actions secret RDP_PASSWORD"
-            echo "- Session: **Xorg**"
+            echo "- Username: \`cloudlab\`"
+            echo "- Password: \`cloudlab\`"
             echo
-            echo "Connect only while your device is logged into the same Tailscale network."
+            echo "Connect via your RDP client. The XRDP login screen will be bypassed automatically."
           } >> "$GITHUB_STEP_SUMMARY"
 
-          echo "CloudLab Linux RDP is ready. Connection details are in the run summary."
+          echo "CloudLab Linux RDP is ready."
 
       - name: Keep session alive
         shell: bash
@@ -144,9 +142,7 @@ jobs:
         shell: bash
         run: |
           sudo ss -lntp | grep -E '3389|22' || true
-          sudo journalctl -u xrdp --no-pager -n 100 || true
-          sudo journalctl -u xrdp-sesman --no-pager -n 100 || true
-          sudo tail -n 100 /var/log/xrdp.log /var/log/xrdp-sesman.log 2>/dev/null || true
+          sudo tail -n 50 /var/log/xrdp.log /var/log/xrdp-sesman.log 2>/dev/null || true
 
       - name: Cleanup
         if: always()
@@ -154,5 +150,5 @@ jobs:
         run: |
           sudo tailscale down || true
           sudo systemctl stop xrdp || true
-          sudo userdel cloudlab 2>/dev/null || true
+          sudo userdel -f cloudlab 2>/dev/null || true
           sudo rm -rf /home/cloudlab
