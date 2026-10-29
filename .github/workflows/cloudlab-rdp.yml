@@ -1,0 +1,166 @@
+name: CloudLab RDP (Tailscale)
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Session duration"
+        required: true
+        type: choice
+        options:
+          - "1h"
+          - "3h"
+          - "6h"
+        default: "6h"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudlab-rdp-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rdp:
+    if: github.ref == 'refs/heads/cloudlab-project-lab'
+    name: Lightweight XFCE4 + RDP over private Tailscale
+    runs-on: ubuntu-24.04
+    timeout-minutes: 365
+
+    steps:
+      - name: Checkout CloudLab Project Lab
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        env:
+          TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+          [[ -n "$TS_AUTHKEY" ]] || {
+            echo "::error::Missing repository secret TS_AUTHKEY."
+            exit 1
+          }
+          [[ -n "$RDP_PASSWORD" ]] || {
+            echo "::error::Missing repository secret RDP_PASSWORD."
+            exit 1
+          }
+          if [[ ${#RDP_PASSWORD} -lt 16 ]]; then
+            echo "::error::RDP_PASSWORD must be at least 16 characters."
+            exit 1
+          fi
+
+      - name: Install lightweight desktop, RDP and browser
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            xfce4-session xfce4-panel xfce4-settings xfdesktop4 thunar \
+            xfce4-terminal dbus-x11 xorgxrdp xrdp pulseaudio \
+            ca-certificates curl wget gnupg
+
+          # Install Google Chrome from Google's official Linux package.
+          curl -fsSL --retry 3 --retry-all-errors \
+            https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+            -o /tmp/google-chrome.deb
+          sudo apt-get install -y --no-install-recommends /tmp/google-chrome.deb
+          rm -f /tmp/google-chrome.deb
+
+          # Avoid expensive desktop effects on the remote desktop.
+          sudo install -d -m 755 /etc/xdg/xfce4/xfconf/xfce-perchannel-xml
+          sudo tee /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml >/dev/null <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xfwm4" version="1.0">
+            <property name="general" type="empty">
+              <property name="use_compositing" type="bool" value="false"/>
+              <property name="show_dock_shadow" type="bool" value="false"/>
+              <property name="show_frame_shadow" type="bool" value="false"/>
+              <property name="cycle_preview" type="bool" value="false"/>
+            </property>
+          </channel>
+          EOF
+
+          # Create a non-sudo account for interactive RDP use.
+          if ! id cloudlab >/dev/null 2>&1; then
+            sudo useradd --create-home --shell /bin/bash cloudlab
+          fi
+          printf 'cloudlab:%s\n' "${RDP_PASSWORD}" | sudo chpasswd
+          sudo install -d -o cloudlab -g cloudlab -m 700 /home/cloudlab
+          sudo -u cloudlab bash -lc 'printf "%s\n" "startxfce4" > ~/.xsession && chmod 600 ~/.xsession'
+          sudo usermod -aG audio cloudlab || true
+
+          # Keep RDP settings modest for the old 2 GB antiX client.
+          sudo sed -i \
+            -e 's/^max_bpp=.*/max_bpp=24/' \
+            -e 's/^xserverbpp=.*/xserverbpp=24/' \
+            -e 's/^use_fastpath=.*/use_fastpath=both/' \
+            /etc/xrdp/xrdp.ini
+          sudo systemctl enable xrdp
+          sudo systemctl restart xrdp
+
+          google-chrome --version
+          xrdp --version
+
+      - name: Join the private Tailscale network
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          hostname: cloudlab-rdp-${{ github.run_id }}
+          ping: 100.64.0.1
+
+      - name: Verify private connection and RDP service
+        run: |
+          set -Eeuo pipefail
+          for attempt in {1..30}; do
+            if systemctl is-active --quiet xrdp; then break; fi
+            sleep 2
+          done
+          systemctl is-active --quiet xrdp || {
+            echo "::error::xrdp did not start."
+            sudo journalctl -u xrdp --no-pager -n 80 || true
+            exit 1
+          }
+
+          TAILSCALE_IP="$(tailscale ip -4 | head -n 1)"
+          [[ -n "$TAILSCALE_IP" ]] || {
+            echo "::error::No Tailscale IPv4 address was assigned."
+            exit 1
+          }
+
+          {
+            echo "## CloudLab RDP is ready"
+            echo
+            echo "- **Connection:** Private Tailscale network only"
+            echo "- **Tailscale address:** `$TAILSCALE_IP`"
+            echo "- **RDP port:** `3389`"
+            echo "- **RDP username:** `cloudlab`"
+            echo "- **RDP password:** The value configured in the GitHub secret `RDP_PASSWORD` (not printed here)"
+            echo "- **Desktop:** XFCE4 (compositing disabled)"
+            echo "- **Browser:** Google Chrome"
+            echo "- **Client suggestion:** Start at 1280×720 and 16-bit color in FreeRDP"
+            echo
+            echo "Connect only from a device authorized on your Tailscale network. Do not expose port 3389 publicly."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "RDP service is active; connection details are in the workflow summary."
+
+      - name: Keep session alive
+        run: |
+          case "${{ inputs.duration || '6h' }}" in
+            1h) sleep 3600 ;;
+            3h) sleep 10800 ;;
+            6h) sleep 21600 ;;
+            *) echo "::error::Invalid duration"; exit 1 ;;
+          esac
+
+      - name: Diagnostics
+        if: failure()
+        run: |
+          sudo systemctl status xrdp --no-pager || true
+          sudo journalctl -u xrdp --no-pager -n 100 || true
+          tailscale status || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          sudo systemctl stop xrdp xrdp-sesman 2>/dev/null || true
