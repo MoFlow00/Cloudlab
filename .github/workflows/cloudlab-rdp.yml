@@ -132,15 +132,13 @@ jobs:
             echo "## CloudLab RDP is ready"
             echo
             echo "- **Connection:** Private Tailscale network only"
-            echo "- **Tailscale address:** `$TAILSCALE_IP`"
-            echo "- **RDP port:** `3389`"
-            echo "- **RDP username:** `cloudlab`"
-            echo "- **RDP password:** The value configured in the GitHub secret `RDP_PASSWORD` (not printed here)"
-            echo "- **Desktop:** XFCE4 (compositing disabled)"
+            echo "- **Tailscale address:** \`${TAILSCALE_IP}\`"
+            echo "- **RDP port:** \`3389\`"
+            echo "- **RDP username:** \`cloudlab\`"
+            echo "- **RDP password:** Use the GitHub secret RDP_PASSWORD"
+            echo "- **Desktop:** XFCE4"
             echo "- **Browser:** Google Chrome"
-            echo "- **Client suggestion:** Start at 1280×720 and 16-bit color in FreeRDP"
-            echo
-            echo "Connect only from a device authorized on your Tailscale network. Do not expose port 3389 publicly."
+            echo "- **Suggested resolution:** 1280x720"
           } >> "$GITHUB_STEP_SUMMARY"
 
           echo "RDP service is active; connection details are in the workflow summary."
