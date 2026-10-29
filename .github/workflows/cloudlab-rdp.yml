@@ -28,10 +28,19 @@ jobs:
     timeout-minutes: 365
 
     steps:
+      - name: Mask secrets immediately
+        env:
+          TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+        run: |
+          set -Eeuo pipefail
+          [[ -z "$TS_AUTHKEY" ]] || echo "::add-mask::$TS_AUTHKEY"
+          [[ -z "$RDP_PASSWORD" ]] || echo "::add-mask::$RDP_PASSWORD"
+
       - name: Checkout CloudLab Project Lab
         uses: actions/checkout@v4
 
-      - name: Validate required secrets
+      - name: Validate required secrets without printing values
         env:
           TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
           RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
@@ -45,6 +54,12 @@ jobs:
             echo "::error::Missing repository secret RDP_PASSWORD."
             exit 1
           }
+          # Tailscale device auth keys normally start with tskey-auth-.
+          # Reject API keys or other credentials before calling Tailscale.
+          if [[ "$TS_AUTHKEY" != tskey-auth-* ]]; then
+            echo "::error::TS_AUTHKEY does not look like a Tailscale device auth key. Generate a device auth key in the Tailscale admin console; do not use a Tailscale API key."
+            exit 1
+          fi
           if [[ ${#RDP_PASSWORD} -lt 16 ]]; then
             echo "::error::RDP_PASSWORD must be at least 16 characters."
             exit 1
@@ -68,7 +83,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends /tmp/google-chrome.deb
           rm -f /tmp/google-chrome.deb
 
-          # Avoid expensive desktop effects on the remote desktop.
+          # Disable desktop effects and keep remote color depth low.
           sudo install -d -m 755 /etc/xdg/xfce4/xfconf/xfce-perchannel-xml
           sudo tee /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml >/dev/null <<'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
@@ -82,7 +97,6 @@ jobs:
           </channel>
           EOF
 
-          # Create a non-sudo account for interactive RDP use.
           if ! id cloudlab >/dev/null 2>&1; then
             sudo useradd --create-home --shell /bin/bash cloudlab
           fi
@@ -91,7 +105,6 @@ jobs:
           sudo -u cloudlab bash -lc 'printf "%s\n" "startxfce4" > ~/.xsession && chmod 600 ~/.xsession'
           sudo usermod -aG audio cloudlab || true
 
-          # Keep RDP settings modest for the old 2 GB antiX client.
           sudo sed -i \
             -e 's/^max_bpp=.*/max_bpp=16/' \
             -e 's/^xserverbpp=.*/xserverbpp=16/' \
@@ -132,7 +145,7 @@ jobs:
             echo "## CloudLab RDP is ready"
             echo
             echo "- **Connection:** Private Tailscale network only"
-            echo "- **Tailscale address:** \`${TAILSCALE_IP}\`"
+            echo "- **Tailscale address:** \`$TAILSCALE_IP\`"
             echo "- **RDP port:** \`3389\`"
             echo "- **RDP username:** \`cloudlab\`"
             echo "- **RDP password:** Use the GitHub secret RDP_PASSWORD"
