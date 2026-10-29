@@ -29,13 +29,12 @@ jobs:
           set -Eeuo pipefail
           sudo apt-get update -qq
           
-          # تثبيت الواجهة والأدوات الأساسية
+          # إضافة xfce4-goodies لضمان وجود جميع ملفات الجلسة الاحتياطية والإعدادات
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            xfce4 xfce4-session xfce4-terminal xrdp xorgxrdp dbus-x11 xauth x11-xserver-utils \
+            xfce4 xfce4-session xfce4-goodies xfce4-terminal xrdp xorgxrdp dbus-x11 xauth x11-xserver-utils \
             curl ca-certificates openssl
           sudo adduser xrdp ssl-cert || true
 
-          # تحديد يوزر وباسورد ثابتين لتسهيل الدخول (بدون Secrets)
           RDP_USER="cloudlab"
           RDP_PASS="cloudlab"
           
@@ -47,21 +46,18 @@ jobs:
           sudo usermod -aG ssl-cert "$RDP_USER"
           sudo usermod -aG sudo "$RDP_USER"
 
-          # فرض إعدادات XDG لتشغيل الواجهة بشكل صحيح
-          cat << 'EOF' | sudo tee /etc/xrdp/startwm.sh
-          #!/bin/sh
-          if [ -r /etc/default/locale ]; then
-            . /etc/default/locale
-            export LANG LANGUAGE
-          fi
+          # الاعتماد على .xsession بدلاً من startwm.sh لضمان توافقه مع الدخول التلقائي
+          cat << 'EOF' | sudo tee /home/$RDP_USER/.xsession
+          #!/bin/bash
           export XDG_SESSION_DESKTOP=xfce
           export XDG_CURRENT_DESKTOP=XFCE
           export XDG_CONFIG_DIRS=/etc/xdg:/etc
-          exec dbus-launch --exit-with-session startxfce4
+          exec dbus-launch --exit-with-session xfce4-session
           EOF
-          sudo chmod +x /etc/xrdp/startwm.sh
+          sudo chown $RDP_USER:$RDP_USER /home/$RDP_USER/.xsession
+          sudo chmod 755 /home/$RDP_USER/.xsession
 
-          # مسح كل الجلسات المعقدة وإنشاء جلسة Xorg واحدة تعمل بتسجيل دخول تلقائي
+          # إعداد الدخول التلقائي بدون شاشة زرقاء
           sudo sed -i '/^\[Xorg\]/,$d' /etc/xrdp/xrdp.ini
           cat <<EOF | sudo tee -a /etc/xrdp/xrdp.ini
           [Xorg]
@@ -125,8 +121,6 @@ jobs:
             echo "Connect via your RDP client. The XRDP login screen will be bypassed automatically."
           } >> "$GITHUB_STEP_SUMMARY"
 
-          echo "CloudLab Linux RDP is ready."
-
       - name: Keep session alive
         shell: bash
         run: |
@@ -136,13 +130,6 @@ jobs:
             5h40m) sleep 20400 ;;
             *) echo "::error::Invalid duration"; exit 1 ;;
           esac
-
-      - name: Diagnostics
-        if: failure()
-        shell: bash
-        run: |
-          sudo ss -lntp | grep -E '3389|22' || true
-          sudo tail -n 50 /var/log/xrdp.log /var/log/xrdp-sesman.log 2>/dev/null || true
 
       - name: Cleanup
         if: always()
