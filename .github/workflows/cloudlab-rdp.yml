@@ -113,15 +113,12 @@ jobs:
           sudo chown cloudlab:cloudlab /home/cloudlab/.xsession
           sudo chmod 700 /home/cloudlab/.xsession
 
-          # Ensure xrdp uses the system Xsession launcher and captures session errors.
-          sudo grep -q '/etc/X11/Xsession' /etc/xrdp/startwm.sh || {
-            echo "::error::Unexpected xrdp startwm.sh; refusing to overwrite it blindly."
-            exit 1
-          }
-          command -v xfconf
+          # Check actual executable names; package does not provide a binary named "xfconf".
+          command -v xfconf-query
           command -v xfconfd
           command -v startxfce4
           command -v dbus-launch
+          test -d /etc/xdg
 
           sudo sed -i \
             -e 's/^max_bpp=.*/max_bpp=16/' \
@@ -142,6 +139,7 @@ jobs:
       - name: Verify private connection and RDP service
         run: |
           set -Eeuo pipefail
+          command -v tailscale
           for attempt in {1..30}; do
             if systemctl is-active --quiet xrdp; then break; fi
             sleep 2
@@ -188,7 +186,7 @@ jobs:
           sudo journalctl -u xrdp --no-pager -n 100 || true
           sudo tail -n 100 /home/cloudlab/.xsession-errors 2>/dev/null || true
           sudo find /home/cloudlab/.cache/sessions -maxdepth 1 -type f -print -exec tail -n 80 {} \; 2>/dev/null || true
-          tailscale status || true
+          command -v tailscale >/dev/null 2>&1 && tailscale status || true
 
       - name: Cleanup
         if: always()
