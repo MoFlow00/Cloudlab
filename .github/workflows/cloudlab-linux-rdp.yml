@@ -48,7 +48,12 @@ jobs:
           echo "$RDP_USER:$RDP_PASS" | sudo chpasswd
           sudo usermod -aG ssl-cert "$RDP_USER"
 
-          sudo -u "$RDP_USER" bash -c 'printf "%s\n" "exec startxfce4" > "$HOME/.xsession"'
+          sudo -u "$RDP_USER" bash -c 'cat <<EOF > "$HOME/.xsession"
+          export XDG_SESSION_DESKTOP=xfce
+          export XDG_CURRENT_DESKTOP=XFCE
+          export XDG_CONFIG_DIRS=/etc/xdg:/etc
+          exec dbus-launch --exit-with-session startxfce4
+          EOF'
           sudo chown "$RDP_USER:$RDP_USER" "/home/$RDP_USER/.xsession"
           sudo chmod 600 "/home/$RDP_USER/.xsession"
 
