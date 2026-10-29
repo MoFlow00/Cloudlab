@@ -18,63 +18,43 @@ permissions:
 
 jobs:
   linux-rdp:
-    name: XFCE4 over RDP (Xorg)
+    name: XFCE4 over RDP
     runs-on: ubuntu-latest
     timeout-minutes: 345
 
     steps:
-      - name: Install XFCE4, XRDP and Xorg backend
+      - name: Install Desktop Environment and XRDP
         shell: bash
         run: |
           set -Eeuo pipefail
           sudo apt-get update -qq
           
-          # إضافة xfce4-goodies لضمان وجود جميع ملفات الجلسة الاحتياطية والإعدادات
+          # تثبيت الواجهة والأدوات المطلوبة بشكل نظيف
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            xfce4 xfce4-session xfce4-goodies xfce4-terminal xrdp xorgxrdp dbus-x11 xauth x11-xserver-utils \
-            curl ca-certificates openssl
+            xfce4 xfce4-session xfce4-terminal xrdp xorgxrdp dbus-x11 xauth
+          
           sudo adduser xrdp ssl-cert || true
 
+          # إنشاء المستخدم
           RDP_USER="cloudlab"
           RDP_PASS="cloudlab"
           
-          if id "$RDP_USER" >/dev/null 2>&1; then
-            sudo userdel -r "$RDP_USER" || true
-          fi
           sudo useradd -m -s /bin/bash "$RDP_USER"
           echo "$RDP_USER:$RDP_PASS" | sudo chpasswd
-          sudo usermod -aG ssl-cert "$RDP_USER"
           sudo usermod -aG sudo "$RDP_USER"
 
-          # الاعتماد على .xsession بدلاً من startwm.sh لضمان توافقه مع الدخول التلقائي
-          cat << 'EOF' | sudo tee /home/$RDP_USER/.xsession
-          #!/bin/bash
-          export XDG_SESSION_DESKTOP=xfce
-          export XDG_CURRENT_DESKTOP=XFCE
-          export XDG_CONFIG_DIRS=/etc/xdg:/etc
-          exec dbus-launch --exit-with-session xfce4-session
-          EOF
+          # تحديد XFCE4 كواجهة افتراضية للمستخدم بطريقة قياسية
+          echo "startxfce4" | sudo tee /home/$RDP_USER/.xsession
           sudo chown $RDP_USER:$RDP_USER /home/$RDP_USER/.xsession
-          sudo chmod 755 /home/$RDP_USER/.xsession
 
-          # إعداد الدخول التلقائي بدون شاشة زرقاء
-          sudo sed -i '/^\[Xorg\]/,$d' /etc/xrdp/xrdp.ini
-          cat <<EOF | sudo tee -a /etc/xrdp/xrdp.ini
-          [Xorg]
-          name=Xorg AutoLogin
-          lib=libxup.so
-          username=$RDP_USER
-          password=$RDP_PASS
-          ip=127.0.0.1
-          port=-1
-          code=20
-          EOF
+          # إزالة خيارات VNC من شاشة الدخول لضمان استخدام Xorg فقط
+          sudo sed -i '/\[Xvnc\]/,/\[vnc-any\]/d' /etc/xrdp/xrdp.ini
 
           sudo systemctl enable xrdp
           sudo systemctl restart xrdp
           sleep 3
           sudo ss -lntp | grep ':3389' || {
-            echo "::error::XRDP did not open TCP port 3389."
+            echo "::error::XRDP failed to start."
             exit 1
           }
 
@@ -102,6 +82,7 @@ jobs:
             [[ -n "$TAILSCALE_IP" ]] && break
             sleep 2
           done
+          
           if [[ -z "$TAILSCALE_IP" ]]; then
             echo "::error::Could not obtain the Tailscale IPv4 address."
             exit 1
@@ -112,13 +93,13 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## CloudLab Linux RDP"
+            echo "## CloudLab Linux RDP is Ready"
             echo
-            echo "- Address: \`$TAILSCALE_IP\`"
-            echo "- Username: \`cloudlab\`"
-            echo "- Password: \`cloudlab\`"
+            echo "- **Address:** \`$TAILSCALE_IP\`"
+            echo "- **Username:** \`cloudlab\`"
+            echo "- **Password:** \`cloudlab\`"
             echo
-            echo "Connect via your RDP client. The XRDP login screen will be bypassed automatically."
+            echo "Connect using Windows Remote Desktop. The login screen will only show Xorg."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep session alive
