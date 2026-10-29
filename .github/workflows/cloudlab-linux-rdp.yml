@@ -24,9 +24,15 @@ jobs:
 
     steps:
       - name: Install XFCE4, XRDP and Xorg backend
+        env:
+          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
         shell: bash
         run: |
           set -Eeuo pipefail
+          if [[ -z "${RDP_PASSWORD:-}" || ${#RDP_PASSWORD} -lt 16 ]]; then
+            echo "::error::Add repository Actions secret RDP_PASSWORD with at least 16 characters."
+            exit 1
+          fi
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             xfce4 xfce4-terminal xrdp xorgxrdp dbus-x11 xauth x11-xserver-utils \
@@ -34,7 +40,7 @@ jobs:
           sudo adduser xrdp ssl-cert || true
 
           RDP_USER="cloudlab"
-          RDP_PASS="$(openssl rand -hex 12)"
+          RDP_PASS="$RDP_PASSWORD"
           if id "$RDP_USER" >/dev/null 2>&1; then
             sudo userdel -r "$RDP_USER" || true
           fi
@@ -101,7 +107,7 @@ jobs:
             echo "- Address: \`$TAILSCALE_IP\`"
             echo "- Port: \`3389\`"
             echo "- Username: \`$RDP_USER\`"
-            echo "- Password: \`$RDP_PASS\`"
+            echo "- Password: use the repository Actions secret RDP_PASSWORD"
             echo "- Session: choose **Xorg**, not Xvnc."
             echo
             echo "Connect only while your device is logged into the same Tailscale network."
