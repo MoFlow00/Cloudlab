@@ -1,0 +1,449 @@
+name: CloudLab Project Lab
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Session duration"
+        required: true
+        type: choice
+        options:
+          - "1h"
+          - "3h"
+          - "6h"
+        default: "6h"
+
+permissions:
+  contents: read
+
+env:
+  # WebRTC performance profile for the GitHub-hosted CPU runner.
+  SELKIES_ENCODER: h264enc
+  SELKIES_FRAMERATE: "60"
+  SELKIES_VIDEO_BITRATE: "8000"
+  SELKIES_AUDIO_BITRATE: "128000"
+  SELKIES_VIDEO_FULLCOLOR: "false"
+  SELKIES_USE_PAINT_OVER_QUALITY: "false"
+  SELKIES_VIDEO_STREAMING_MODE: "true"
+  SELKIES_SECOND_SCREEN: "false"
+  SELKIES_GAMEPAD_ENABLED: "false"
+  SELKIES_MICROPHONE_ENABLED: "false"
+  SELKIES_ENABLE_BINARY_CLIPBOARD: "false"
+
+jobs:
+  desktop:
+    if: github.ref == 'refs/heads/main'
+    name: CloudLab XFCE4 WebRTC
+    runs-on: ubuntu-latest
+    timeout-minutes: 365
+
+    steps:
+      - name: Checkout CloudLab Project Lab
+        uses: actions/checkout@v4
+
+      - name: Install lightweight desktop
+        run: |
+          set -Eeuo pipefail
+
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            xfce4 \
+            xfce4-terminal \
+            git \
+            python3-tk \
+            python3-venv \
+            curl \
+            ca-certificates \
+            pulseaudio \
+            openssl \
+            jq
+
+          SELKIES_VERSION="2.0.0"
+
+          . /etc/os-release
+          DISTRO="${ID}${VERSION_ID}"
+          ARCH="$(dpkg --print-architecture)"
+          PKG="selkies-${SELKIES_VERSION}-${DISTRO}-${ARCH}.deb"
+
+          curl -fsSL --retry 5 --retry-all-errors \
+            -o "/tmp/${PKG}" \
+            "https://github.com/selkies-project/selkies/releases/download/${SELKIES_VERSION}/${PKG}"
+
+          sudo apt-get install -y "/tmp/${PKG}"
+
+          # Selkies 2.0.0 uses the old Cloudflare TURN credential endpoint.
+          # Cloudflare now serves this endpoint as /generate-ice-servers.
+          # Find the installed module directly. The release package does not
+          # expose the Selkies Python package through the runner's system Python.
+          SELKIES_ICE_CONFIG="$(sudo find /usr /opt -type f -name 'webrtc_ice_config.py' -path '*/selkies/*' 2>/dev/null | head -n 1)"
+          
+          if [[ -z "$SELKIES_ICE_CONFIG" ]]; then
+            echo "::error::Selkies webrtc_ice_config.py was not found after installation."
+            dpkg -L "selkies-$SELKIES_VERSION" | grep -E 'webrtc_ice_config.py|selkies' | head -50 || true
+            exit 1
+          fi
+          
+          echo "Patching Selkies ICE module: $SELKIES_ICE_CONFIG"
+          sudo sed -i \
+            's#https://rtc.live.cloudflare.com/v1/turn/keys/{turn_token_id}/credentials/generate"#https://rtc.live.cloudflare.com/v1/turn/keys/{turn_token_id}/credentials/generate-ice-servers"#' \
+            "$SELKIES_ICE_CONFIG"
+          
+          if ! sudo grep -q 'credentials/generate-ice-servers' "$SELKIES_ICE_CONFIG"; then
+            echo "::error::Cloudflare TURN endpoint patch was not applied."
+            exit 1
+          fi
+          
+          echo "Selkies Cloudflare TURN endpoint patched successfully."
+
+          curl -fsSL --retry 5 --retry-all-errors \
+            -o "$HOME/cloudflared" \
+            "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
+
+          chmod +x "$HOME/cloudflared"
+
+          selkies --help >/dev/null
+          selkies-session --help >/dev/null
+
+      - name: Add desktop launchers for CloudLab tools
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$HOME/.local/share/applications"
+          cat > "$HOME/.local/share/applications/cloudlab-software-menu.desktop" <<'EOF'
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=CloudLab Software Lab
+          Comment=Install CloudLab tools, utilities and runtimes
+          Exec=xfce4-terminal --hold --command=/usr/local/bin/menu
+          Icon=applications-system
+          Terminal=false
+          Categories=System;Utility;
+          EOF
+          chmod 644 "$HOME/.local/share/applications/cloudlab-software-menu.desktop"
+
+      - name: Validate CloudLab app installers
+        run: |
+          set -Eeuo pipefail
+
+          for installer in installers/*.sh; do
+            bash -n "$installer"
+          done
+
+          echo "Validated curated CloudLab installers:"
+          for installer in installers/*.sh; do
+            sed -n 's/^# APP_NAME=//p' "$installer" | head -n 1
+          done
+
+
+      - name: Install CloudLab Project Lab
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_DATASET_REPO_ID: ${{ secrets.HF_DATASET_REPO_ID }}
+        run: |
+          set -Eeuo pipefail
+
+          PYTHONPYCACHEPREFIX=/tmp/cloudlab-pycache python3 -m py_compile project-lab/app.py
+          bash -n project-lab/launcher.sh
+          bash -n menu.sh
+          for installer in installers/*.sh; do bash -n "$installer"; done
+
+          sudo install -d -m 755 /opt/cloudlab/installers
+          sudo install -m 644 project-lab/app.py /opt/cloudlab/app.py
+          sudo install -m 755 menu.sh /opt/cloudlab/menu.sh
+          sudo install -m 644 installers/*.sh /opt/cloudlab/installers/
+          sudo tee /usr/local/bin/menu >/dev/null <<'EOF'
+          #!/usr/bin/env bash
+          exec bash /opt/cloudlab/menu.sh "$@"
+          EOF
+          sudo chmod 755 /usr/local/bin/menu
+
+          mkdir -p "$HOME/.local/share/cloudlab"
+          python3 -m venv "$HOME/.local/share/cloudlab/venv"
+          "$HOME/.local/share/cloudlab/venv/bin/pip" install --disable-pip-version-check --quiet "huggingface_hub>=0.30,<2"
+
+          sudo tee /usr/local/bin/cloudlab-project-lab >/dev/null <<EOF
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec "$HOME/.local/share/cloudlab/venv/bin/python" /opt/cloudlab/app.py
+          EOF
+          sudo chmod 755 /usr/local/bin/cloudlab-project-lab
+
+          mkdir -p "$HOME/.config/cloudlab"
+          chmod 700 "$HOME/.config/cloudlab"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = Path.home() / ".config/cloudlab/secrets.json"
+          p.write_text(json.dumps({
+              "HF_TOKEN": os.environ.get("HF_TOKEN", ""),
+              "HF_DATASET_REPO_ID": os.environ.get("HF_DATASET_REPO_ID", ""),
+          }), encoding="utf-8")
+          p.chmod(0o600)
+          PY
+
+          echo "CloudLab Project Lab installed. Hugging Face sync is enabled when its GitHub secrets are configured."
+
+      - name: Create temporary Cloudflare TURN key
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+
+          if [[ -z "$CF_ACCOUNT_ID" || -z "$CF_API_TOKEN" ]]; then
+            echo "::error::Missing CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN repository secrets."
+            echo "::error::WebRTC needs Cloudflare Calls TURN for the GitHub-hosted runner."
+            echo "::error::The API token needs Calls Write permission."
+            exit 1
+          fi
+
+          TURN_RESPONSE="$(curl -fsS --retry 5 --retry-all-errors \
+            -X POST \
+            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/calls/turn_keys" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"CloudLab ephemeral WebRTC"}')"
+
+          if [[ "$(jq -r '.success' <<<"$TURN_RESPONSE")" != "true" ]]; then
+            echo "::error::Cloudflare TURN key creation failed."
+            jq -c '.errors' <<<"$TURN_RESPONSE" || true
+            exit 1
+          fi
+
+          TURN_KEY_ID="$(jq -r '.result.uid' <<<"$TURN_RESPONSE")"
+
+          if [[ -z "$TURN_KEY_ID" || "$TURN_KEY_ID" == "null" ]]; then
+            echo "::error::Cloudflare did not return a TURN key ID."
+            exit 1
+          fi
+
+          {
+            echo "CF_ACCOUNT_ID=$CF_ACCOUNT_ID"
+            echo "TURN_KEY_ID=$TURN_KEY_ID"
+            echo "CF_API_TOKEN=$CF_API_TOKEN"
+          } >> "$GITHUB_ENV"
+
+          echo "Cloudflare TURN key created for this session."
+
+      - name: Add CloudLab tools launcher to XFCE menu
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$HOME/.local/share/applications"
+          cat > "$HOME/.local/share/applications/cloudlab-software-menu.desktop" <<'EOF'
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=CloudLab Software Lab
+          Comment=Install CloudLab apps and runtimes
+          Exec=xfce4-terminal --hold -e /usr/local/bin/menu
+          Icon=applications-system
+          Terminal=false
+          Categories=System;Utility;
+          EOF
+          chmod 644 "$HOME/.local/share/applications/cloudlab-software-menu.desktop"
+
+      - name: Start Selkies desktop
+        run: |
+          set -Eeuo pipefail
+
+          mkdir -p "$HOME/.selkies/logs"
+          mkdir -p "$HOME/Desktop"
+          install -m 755 project-lab/cloudlab-project-lab.desktop "$HOME/Desktop/CloudLab Project Lab.desktop"
+
+          PASSWORD="$(openssl rand -hex 12)"
+          echo "$PASSWORD" > "$HOME/.selkies/password"
+
+          rm -rf "$HOME/.config/xfce4"
+
+          mkdir -p "$HOME/.config/xfce4/xfconf/xfce-perchannel-xml"
+          cat > "$HOME/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <channel name="xfwm4" version="1.0">
+            <property name="general" type="empty">
+              <property name="use_compositing" type="bool" value="false"/>
+              <property name="show_dock_shadow" type="bool" value="false"/>
+              <property name="show_frame_shadow" type="bool" value="false"/>
+            </property>
+          </channel>
+          EOF
+
+          nohup selkies-session \
+            --session=xfce \
+            --public \
+            --port=8080 \
+            --mode=webrtc \
+            --enable-dual-mode=true \
+            --enable-cloudflare-turn=true \
+            --cloudflare-turn-token-id="$TURN_KEY_ID" \
+            --cloudflare-turn-api-token="$CF_API_TOKEN" \
+            --enable-resize=true \
+            --basic-auth-user=ubuntu \
+            --basic-auth-password="$PASSWORD" \
+            > "$HOME/.selkies/logs/selkies.log" 2>&1 &
+
+          echo $! > "$HOME/.selkies/selkies.pid"
+
+          for attempt in {1..60}; do
+            if curl -fsS \
+              -u "ubuntu:$PASSWORD" \
+              --max-time 5 \
+              -o /dev/null \
+              http://127.0.0.1:8080/; then
+              break
+            fi
+
+            if ! kill -0 "$(cat "$HOME/.selkies/selkies.pid")" 2>/dev/null; then
+              echo "::error::Selkies stopped."
+              cat "$HOME/.selkies/logs/selkies.log" || true
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          if ! curl -fsS \
+            -u "ubuntu:$PASSWORD" \
+            --max-time 5 \
+            -o /dev/null \
+            http://127.0.0.1:8080/; then
+            echo "::error::Selkies did not become ready."
+            cat "$HOME/.selkies/logs/selkies.log" || true
+            exit 1
+          fi
+
+          {
+            echo "SELKIES_PASSWORD=$PASSWORD"
+          } >> "$GITHUB_ENV"
+
+          if ! grep -q "server running" "$HOME/.selkies/logs/selkies.log"; then
+            echo "::warning::Selkies HTTP readiness passed, but startup log marker was not found."
+          fi
+
+          echo "Selkies WebRTC desktop is ready."
+
+      - name: Start Cloudflare Quick Tunnel for signaling
+        run: |
+          set -Eeuo pipefail
+
+          "$HOME/cloudflared" tunnel \
+            --no-autoupdate \
+            --url http://127.0.0.1:8080 \
+            > "$HOME/.selkies/logs/cloudflared.log" 2>&1 &
+
+          echo $! > "$HOME/.selkies/cloudflared.pid"
+
+          PUBLIC_URL=""
+
+          for attempt in {1..60}; do
+            # cloudflared can emit the Quick Tunnel URL with terminal formatting or
+            # as a markdown-style link. Strip formatting first, then extract only
+            # the hostname so the readiness check is not dependent on log styling.
+            CLEAN_LOG="$(sed -E $'s/\\x1B\\[[0-9;?]*[ -/]*[@-~]//g' \
+              "$HOME/.selkies/logs/cloudflared.log" 2>/dev/null || true)"
+
+            PUBLIC_URL="$(printf '%s\\n' "$CLEAN_LOG" \
+              | grep -aEo 'https://[A-Za-z0-9.-]+\.trycloudflare\.com' \
+              | tail -n 1 || true)"
+
+            if [[ -n "$PUBLIC_URL" ]]; then
+              break
+            fi
+
+            if ! kill -0 "$(cat "$HOME/.selkies/cloudflared.pid")" 2>/dev/null; then
+              echo "::error::Cloudflare Tunnel stopped."
+              cat "$HOME/.selkies/logs/cloudflared.log" || true
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          [[ -n "$PUBLIC_URL" ]] || {
+            echo "::error::Cloudflare public URL was not created."
+            cat "$HOME/.selkies/logs/cloudflared.log" || true
+            exit 1
+          }
+
+          status="000"
+
+          for attempt in {1..30}; do
+            status="$(curl -sS \
+              -u "ubuntu:$SELKIES_PASSWORD" \
+              --max-time 10 \
+              -o /dev/null \
+              -w "%{http_code}" \
+              "$PUBLIC_URL/" 2>/dev/null || true)"
+
+            if [[ "$status" == "200" ]]; then
+              break
+            fi
+
+            sleep 2
+          done
+
+          if [[ "$status" != "200" ]]; then
+            echo "::error::Public Selkies URL did not respond."
+            cat "$HOME/.selkies/logs/cloudflared.log" || true
+            exit 1
+          fi
+
+          {
+            echo "========================================"
+            echo "CLOUDLAB IS READY"
+            echo "========================================"
+            echo "Project     : Selkies"
+            echo "Linux       : Ubuntu"
+            echo "Desktop     : XFCE4"
+            echo "Transport   : WebRTC"
+            echo "Media Relay : Cloudflare Calls TURN"
+            echo "Encoder     : H.264 software"
+            echo "Resolution  : Dynamic / browser fitted"
+            echo "Status      : ONLINE"
+            echo
+            echo "Public URL  : $PUBLIC_URL/"
+            echo "Username    : ubuntu"
+            echo "Password    : $SELKIES_PASSWORD"
+            echo
+            echo "Open the URL. WebRTC is the default transport."
+            echo "WebSocket fallback is available from the Selkies menu."
+            echo "========================================"
+          } | tee /tmp/connection.txt
+
+          {
+            echo "### CLOUDLAB DESKTOP"
+            cat /tmp/connection.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep session alive
+        run: |
+          case "${{ inputs.duration || '6h' }}" in
+            1h) sleep 3600 ;;
+            3h) sleep 10800 ;;
+            6h) sleep 21600 ;;
+            *) echo "::error::Invalid duration"; exit 1 ;;
+          esac
+
+      - name: Diagnostics
+        if: failure()
+        run: |
+          ps aux | grep -E 'selkies|xfce|Xvfb|pulseaudio|cloudflared' | grep -v grep || true
+          cat "$HOME/.selkies/logs/selkies.log" 2>/dev/null || true
+          cat "$HOME/.selkies/logs/cloudflared.log" 2>/dev/null || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          if [[ -n "${TURN_KEY_ID:-}" && -n "${CF_ACCOUNT_ID:-}" && -n "${CF_API_TOKEN:-}" ]]; then
+            curl -fsS --retry 3 \
+              -X DELETE \
+              "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/calls/turn_keys/${TURN_KEY_ID}" \
+              -H "Authorization: Bearer ${CF_API_TOKEN}" \
+              -o /dev/null || true
+          fi
+
+          pkill -f selkies-session >/dev/null 2>&1 || true
+          pkill -f selkies >/dev/null 2>&1 || true
+          pkill -f xfce4 >/dev/null 2>&1 || true
+          pkill -f Xvfb >/dev/null 2>&1 || true
+          pkill -f pulseaudio >/dev/null 2>&1 || true
+          pkill -f cloudflared >/dev/null 2>&1 || true
