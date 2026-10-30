@@ -57,18 +57,18 @@ jobs:
           }
           $matKhau = New-PremiumPassword
           $securePass = ConvertTo-SecureString $matKhau -AsPlainText -Force
-          Remove-LocalUser -Name "AISTV-PREMIUM" -ErrorAction SilentlyContinue
-          New-LocalUser -Name "AISTV-PREMIUM" -Password $securePass -AccountNeverExpires -Description "AI STV Premium Account"
-          Add-LocalGroupMember -Group "Administrators" -Member "AISTV-PREMIUM" -ErrorAction SilentlyContinue
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "AISTV-PREMIUM" -ErrorAction SilentlyContinue
-          Enable-LocalUser -Name "AISTV-PREMIUM"
+          Remove-LocalUser -Name "Moo" -ErrorAction SilentlyContinue
+          New-LocalUser -Name "Moo" -Password $securePass -AccountNeverExpires -Description "AI STV Premium Account"
+          Add-LocalGroupMember -Group "Administrators" -Member "Moo" -ErrorAction SilentlyContinue
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "Moo" -ErrorAction SilentlyContinue
+          Enable-LocalUser -Name "Moo"
           # Mask the credential in subsequent Actions log output; do not export it as an environment variable.
           Write-Output "::add-mask::$matKhau"
-          "RDP_USER=AISTV-PREMIUM" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "RDP_USER=Moo" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           $summary = @"
           ## Windows RDP connection
           - **Address:** Tailscale IP will appear in the connection step
-          - **Username:** AISTV-PREMIUM
+          - **Username:** Moo
           - **Password:** $matKhau
           - **Port:** 3389
           - **Network:** Tailscale only
@@ -147,7 +147,7 @@ jobs:
           Write-Host "│ 🎉 CONNECTION SUCCESSFUL!                │" -ForegroundColor Cyan
           Write-Host "├───────────────────────────────────────────┤" -ForegroundColor Cyan
           Write-Host "│ 🌐 Address: $env:TAILSCALE_IP            │" -ForegroundColor White
-          Write-Host "│ 👤 Username: AISTV-PREMIUM               │" -ForegroundColor White
+          Write-Host "│ 👤 Username: Moo               │" -ForegroundColor White
           Write-Host "│ ⏰ Duration: $displayTime                │" -ForegroundColor White
           Write-Host "│ 📍 Port: 3389                            │" -ForegroundColor White
           Write-Host "└───────────────────────────────────────────┘" -ForegroundColor Cyan
@@ -174,7 +174,7 @@ jobs:
         if: always()
         run: |
           # Remove the temporary account instead of leaving a disabled privileged account behind.
-          Remove-LocalUser -Name "AISTV-PREMIUM" -ErrorAction SilentlyContinue
+          Remove-LocalUser -Name "Moo" -ErrorAction SilentlyContinue
           if ($env:TAILSCALE_INSTALLED -eq "true") {
               $tailscalePath = $null
               $exe = Get-ChildItem -Path "C:\Program Files\Tailscale", "${env:ProgramFiles(x86)}\Tailscale" -Filter "tailscale.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
