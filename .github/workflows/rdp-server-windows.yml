@@ -37,44 +37,32 @@ jobs:
           Start-Service -Name TermService -ErrorAction SilentlyContinue
 
       - name: 👤 CREATE PREMIUM ACCOUNT
+        env:
+          RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
         run: |
-          function New-PremiumPassword {
-              $upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
-              $lower = 'abcdefghijkmnpqrstuvwxyz'
-              $numbers = '23456789'
-              $symbols = '!@#$%*-_+='
-              $all = $upper + $lower + $numbers + $symbols
-              $chars = @(
-                  $upper[(Get-Random -Minimum 0 -Maximum $upper.Length)]
-                  $lower[(Get-Random -Minimum 0 -Maximum $lower.Length)]
-                  $numbers[(Get-Random -Minimum 0 -Maximum $numbers.Length)]
-                  $symbols[(Get-Random -Minimum 0 -Maximum $symbols.Length)]
-              )
-              for ($i = 4; $i -lt 20; $i++) {
-                  $chars += $all[(Get-Random -Minimum 0 -Maximum $all.Length)]
-              }
-              return -join ($chars | Sort-Object { Get-Random })
+          if ([string]::IsNullOrWhiteSpace($env:RDP_PASSWORD)) {
+              throw "Missing GitHub repository secret: RDP_PASSWORD"
           }
-          $matKhau = New-PremiumPassword
-          $securePass = ConvertTo-SecureString $matKhau -AsPlainText -Force
+          if ($env:RDP_PASSWORD.Length -lt 16) {
+              throw "RDP_PASSWORD must be at least 16 characters long"
+          }
+          # Mask the configured secret in Actions logs.
+          Write-Output "::add-mask::$env:RDP_PASSWORD"
+          $securePass = ConvertTo-SecureString $env:RDP_PASSWORD -AsPlainText -Force
           Remove-LocalUser -Name "Moo" -ErrorAction SilentlyContinue
           New-LocalUser -Name "Moo" -Password $securePass -AccountNeverExpires -Description "AI STV Premium Account"
           Add-LocalGroupMember -Group "Administrators" -Member "Moo" -ErrorAction SilentlyContinue
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "Moo" -ErrorAction SilentlyContinue
           Enable-LocalUser -Name "Moo"
-          # Mask the credential in subsequent Actions log output; do not export it as an environment variable.
-          Write-Output "::add-mask::$matKhau"
           "RDP_USER=Moo" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          $summary = @"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value @"
           ## Windows RDP connection
-          - **Address:** Tailscale IP will appear in the connection step
           - **Username:** Moo
-          - **Password:** $matKhau
+          - **Password:** Use the value saved in GitHub Secret RDP_PASSWORD
           - **Port:** 3389
           - **Network:** Tailscale only
           - **NLA:** Enabled
           "@
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $summary
 
       - name: 🌐 SETUP PREMIUM NETWORK (TAILSCALE)
         env:
