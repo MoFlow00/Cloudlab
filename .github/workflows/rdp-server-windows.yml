@@ -1,0 +1,173 @@
+name: 🚀 SEVER AI STV PREMIUM
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: '🕐 Usage Time'
+        required: false
+        default: '5h40m'
+        type: choice
+        options:
+        - '1h'
+        - '3h' 
+        - '5h40m'
+
+jobs:
+  Premium-RDP-Setup:
+    runs-on: windows-latest
+    timeout-minutes: 340
+    
+    steps:
+      - name: 🎯 STARTING SYSTEM
+        run: |
+          Write-Host "🤖 AI STV PREMIUM RDP SERVER" -ForegroundColor Yellow
+          Write-Host "⚡ Powered by AI STV" -ForegroundColor Green
+          Write-Host "🕒 Duration: ${{ github.event.inputs.duration }}" -ForegroundColor Magenta
+
+      - name: 🔧 SYSTEM CONFIGURATION
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          netsh advfirewall firewall add rule name="RDP-Premium" dir=in action=allow protocol=TCP localport=3389 profile=any
+          Set-Service -Name TermService -StartupType Automatic -ErrorAction SilentlyContinue
+          Start-Service -Name TermService -ErrorAction SilentlyContinue
+
+      - name: 👤 CREATE PREMIUM ACCOUNT
+        run: |
+          function New-PremiumPassword {
+              $upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+              $lower = 'abcdefghijkmnpqrstuvwxyz'
+              $numbers = '23456789'
+              $all = $upper + $lower + $numbers
+              $pw = ''
+              $pw += $upper[(Get-Random -Minimum 0 -Maximum $upper.Length)]
+              $pw += $lower[(Get-Random -Minimum 0 -Maximum $lower.Length)]
+              $pw += $numbers[(Get-Random -Minimum 0 -Maximum $numbers.Length)]
+              for ($i = 1; $i -le 5; $i++) {
+                  $pw += $all[(Get-Random -Minimum 0 -Maximum $all.Length)]
+              }
+              return -join ($pw.ToCharArray() | Sort-Object { Get-Random })
+          }
+          $matKhau = New-PremiumPassword
+          $securePass = ConvertTo-SecureString $matKhau -AsPlainText -Force
+          Remove-LocalUser -Name "AISTV-PREMIUM" -ErrorAction SilentlyContinue
+          New-LocalUser -Name "AISTV-PREMIUM" -Password $securePass -AccountNeverExpires -Description "AI STV Premium Account"
+          Add-LocalGroupMember -Group "Administrators" -Member "AISTV-PREMIUM" -ErrorAction SilentlyContinue
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "AISTV-PREMIUM" -ErrorAction SilentlyContinue
+          Enable-LocalUser -Name "AISTV-PREMIUM"
+          echo "RDP_USER=AISTV-PREMIUM" >> $env:GITHUB_ENV
+          echo "RDP_PASS=$matKhau" >> $env:GITHUB_ENV
+          echo "$matKhau" > $env:TEMP\rdp_password.txt
+
+      - name: 🌐 SETUP PREMIUM NETWORK (TAILSCALE)
+        env:
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          $msiPath = "$env:TEMP\tailscale-premium.msi"
+          Write-Host "📥 Downloading Tailscale..." -ForegroundColor Yellow
+          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi" -OutFile $msiPath -UseBasicParsing
+          Write-Host "📦 Installing Tailscale..." -ForegroundColor Yellow
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$msiPath`"", "/quiet", "/norestart" -Wait
+          Start-Sleep -Seconds 30
+          Write-Host "🔍 Searching for Tailscale executable..." -ForegroundColor Cyan
+          $tailscalePath = $null
+          $searchPaths = @(
+            "$env:ProgramFiles\Tailscale",
+            "${env:ProgramFiles(x86)}\Tailscale",
+            "$env:LocalAppData\Tailscale"
+          )
+          foreach ($path in $searchPaths) {
+            if (Test-Path $path) {
+              $exe = Get-ChildItem -Path $path -Filter "tailscale.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($exe) {
+                $tailscalePath = $exe.FullName
+                break
+              }
+            }
+          }
+          if (-not $tailscalePath) {
+            $exe = Get-ChildItem -Path "C:\Program Files", "C:\Program Files (x86)" -Filter "tailscale.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($exe) {
+              $tailscalePath = $exe.FullName
+            }
+          }
+          if (-not $tailscalePath) {
+            Write-Host "❌ Error: Tailscale executable not found after installation" -ForegroundColor Red
+            throw "Tailscale installation failed - executable not found"
+          }
+          Write-Host "✅ Tailscale found at: $tailscalePath" -ForegroundColor Green
+          Remove-Item $msiPath -Force -ErrorAction SilentlyContinue
+          Write-Host "🔗 Connecting to Tailscale network..." -ForegroundColor Yellow
+          & $tailscalePath up --authkey=$env:TAILSCALE_AUTH_KEY --hostname=ai-stv-premium-$env:GITHUB_RUN_ID --accept-routes --accept-dns --reset
+          Start-Sleep -Seconds 10
+          Write-Host "🔄 Fetching Tailscale IP..." -ForegroundColor Blue
+          $ip = $null
+          for($i=0; $i -lt 30; $i++) {
+            $ip = & $tailscalePath ip -4 2>&1 | Where-Object { $_ -match '^\d+\.\d+\.\d+\.\d+$' } | Select-Object -First 1
+            if ($ip) {
+              Write-Host "✅ IP Address: $ip" -ForegroundColor Green
+              echo "TAILSCALE_IP=$ip" >> $env:GITHUB_ENV
+              echo "TAILSCALE_INSTALLED=true" >> $env:GITHUB_ENV
+              break
+            }
+            Write-Host "⏳ Waiting for IP... ($i/30)" -ForegroundColor Cyan
+            Start-Sleep -Seconds 3
+          }
+          if (-not $ip) {
+            Write-Host "❌ Failed to get Tailscale IP after waiting" -ForegroundColor Red
+            throw "Failed to get Tailscale IP address"
+          }
+
+      - name: 🎉 CONNECTION INFO
+        run: |
+          $matKhau = Get-Content $env:TEMP\rdp_password.txt -ErrorAction SilentlyContinue
+          $durationInput = "${{ github.event.inputs.duration }}"
+          switch ($durationInput) {
+              "1h" { $totalMinutes = 60; $displayTime = "1 hour" }
+              "3h" { $totalMinutes = 180; $displayTime = "3 hours" }
+              "5h40m" { $totalMinutes = 340; $displayTime = "5 hours 40 minutes" }
+          }
+          Write-Host "┌───────────────────────────────────────────┐" -ForegroundColor Cyan
+          Write-Host "│ 🎉 CONNECTION SUCCESSFUL!                │" -ForegroundColor Cyan
+          Write-Host "├───────────────────────────────────────────┤" -ForegroundColor Cyan
+          Write-Host "│ 🌐 Address: $env:TAILSCALE_IP            │" -ForegroundColor White
+          Write-Host "│ 👤 Username: AISTV-PREMIUM               │" -ForegroundColor White
+          Write-Host "│ 🔐 Password: $matKhau                    │" -ForegroundColor White
+          Write-Host "│ ⏰ Duration: $displayTime                │" -ForegroundColor White
+          Write-Host "│ 📍 Port: 3389                            │" -ForegroundColor White
+          Write-Host "└───────────────────────────────────────────┘" -ForegroundColor Cyan
+          echo "TOTAL_MINUTES=$totalMinutes" >> $env:GITHUB_ENV
+
+      - name: ⏳ KEEP SESSION ALIVE
+        run: |
+          $totalMinutes = $env:TOTAL_MINUTES
+          $timeZone = [System.TimeZoneInfo]::FindSystemTimeZoneById("SE Asia Standard Time")
+          $startTime = [System.TimeZoneInfo]::ConvertTimeFromUtc((Get-Date).ToUniversalTime(), $timeZone)
+          $endTime = $startTime.AddMinutes($totalMinutes)
+          do {
+              $currentTime = [System.TimeZoneInfo]::ConvertTimeFromUtc((Get-Date).ToUniversalTime(), $timeZone)
+              $timeLeft = $endTime - $currentTime
+              $hoursLeft = [math]::Max(0, [math]::Floor($timeLeft.TotalHours))
+              $minsLeft = [math]::Max(0, [math]::Floor($timeLeft.TotalMinutes % 60))
+              $secsLeft = [math]::Max(0, [math]::Floor($timeLeft.TotalSeconds % 60))
+              Write-Host "[$($currentTime.ToString('HH:mm:ss'))] Time remaining: $hoursLeft hours $minsLeft minutes $secsLeft seconds" -ForegroundColor Blue
+              Start-Sleep -Seconds 30
+          } while ($timeLeft.TotalSeconds -gt 0)
+          Write-Host "🎯 TIME EXPIRED - STOPPING SESSION!" -ForegroundColor Red
+
+      - name: 🧹 CLEANUP
+        if: always()
+        run: |
+          Remove-Item "$env:TEMP\rdp_password.txt" -ErrorAction SilentlyContinue
+          Disable-LocalUser -Name "AISTV-PREMIUM" -ErrorAction SilentlyContinue
+          if ($env:TAILSCALE_INSTALLED -eq "true") {
+              $tailscalePath = $null
+              $exe = Get-ChildItem -Path "C:\Program Files\Tailscale", "${env:ProgramFiles(x86)}\Tailscale" -Filter "tailscale.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($exe) { $tailscalePath = $exe.FullName }
+              if ($tailscalePath) {
+                  & $tailscalePath down --accept-risk=all -ErrorAction SilentlyContinue
+              }
+          }
+          netsh advfirewall firewall delete rule name="RDP-Premium" -ErrorAction SilentlyContinue
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 1 -Force -ErrorAction SilentlyContinue
