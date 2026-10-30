@@ -46,6 +46,15 @@ jobs:
           if ($env:RDP_PASSWORD.Length -lt 16) {
               throw "RDP_PASSWORD must be at least 16 characters long"
           }
+          if ($env:RDP_PASSWORD -match 'Moo') {
+              throw "RDP_PASSWORD must not contain the username Moo"
+          }
+          if ($env:RDP_PASSWORD -notmatch '[A-Z]' -or
+              $env:RDP_PASSWORD -notmatch '[a-z]' -or
+              $env:RDP_PASSWORD -notmatch '\d' -or
+              $env:RDP_PASSWORD -notmatch '[^A-Za-z0-9]') {
+              throw "RDP_PASSWORD must include uppercase, lowercase, a number, and a symbol"
+          }
           # Mask the configured secret in Actions logs.
           Write-Output "::add-mask::$env:RDP_PASSWORD"
           $securePass = ConvertTo-SecureString $env:RDP_PASSWORD -AsPlainText -Force
