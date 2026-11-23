@@ -194,17 +194,17 @@ console.log(`❌ Failed to upload ${fileName} to GitHub after ${retries} attempt
     }
 
     try {
-    console.log("1. Opening browser...");
-
-    browser = await puppeteer.launch({
-        executablePath: process.env.CHROME_PATH || '/usr/bin/chromium',
-        headless: true,
-        args: [
-            '--no-sandbox',
-            '--disable-gpu',
-            '--disable-dev-shm-usage'
-        ]
-    });
+        console.log("1. Opening browser...");
+        browser = await puppeteer.launch({
+            executablePath: process.env.CHROME_PATH || '/usr/bin/chromium',
+            args: [
+                '--no-sandbox',
+                '--disable-gpu',
+                '--disable-dev-shm-usage',
+                '--disable-blink-features=AutomationControlled',
+                '--headless=new'
+            ]
+        });
 
     console.log("✅ Browser opened successfully.");
 
