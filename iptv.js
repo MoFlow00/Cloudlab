@@ -194,17 +194,19 @@ console.log(`❌ Failed to upload ${fileName} to GitHub after ${retries} attempt
     }
 
     try {
-        console.log("1. Opening browser...");
-        browser = await puppeteer.launch({
-            executablePath: '/data/data/com.termux/files/usr/bin/chromium-browser',
-            args: [
-                '--no-sandbox',
-                '--disable-gpu',
-                '--disable-dev-shm-usage',
-                '--disable-blink-features=AutomationControlled',
-                '--headless=new'
-            ]
-        });
+    console.log("1. Opening browser...");
+
+    browser = await puppeteer.launch({
+        executablePath: process.env.CHROME_PATH || '/usr/bin/chromium',
+        headless: true,
+        args: [
+            '--no-sandbox',
+            '--disable-gpu',
+            '--disable-dev-shm-usage'
+        ]
+    });
+
+    console.log("✅ Browser opened successfully.");
 
         page = await browser.newPage();
 
