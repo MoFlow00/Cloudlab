@@ -1,0 +1,33 @@
+name: CloudLab Linux IPTV Manual Run
+
+on:
+  schedule:
+    # 06:00 and 18:00 Dubai time (UTC+4)
+    - cron: "0 2,14 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send manual-run reminder
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${TELEGRAM_BOT_TOKEN}" || -z "${TELEGRAM_CHAT_ID}" ]]; then
+            echo "::error::Add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID repository secrets."
+            exit 1
+          fi
+
+          MESSAGE=$'⏰ CloudLab IPTV run is due.\n\n1. Open the service and complete account creation manually.\n2. Do not automate or bypass CAPTCHA / Cloudflare checks.\n3. Once you have authorized account details, run the separate private playlist-processing step.'
+          curl --fail --silent --show-error \
+            --request POST \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${MESSAGE}" \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
