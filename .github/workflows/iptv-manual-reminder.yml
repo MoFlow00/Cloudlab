@@ -1,4 +1,4 @@
-name: CloudLab Linux IPTV Manual Run
+name: CloudLab IPTV Runner
 
 on:
   schedule:
@@ -10,24 +10,50 @@ permissions:
   contents: read
 
 jobs:
-  remind:
+  run-iptv:
+    name: Run iptv.js (maximum 15 minutes)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
+
     steps:
-      - name: Send manual-run reminder
+      - name: Checkout CloudLab
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Chromium and Node dependencies
+        run: |
+          set -Eeuo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends chromium
+          npm install --no-save puppeteer-core
+
+      - name: Run iptv.js for up to 15 minutes
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_TOKEN: ${{ secrets.IPTV_GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ secrets.IPTV_GITHUB_REPO }}
+          CHROME_PATH: /usr/bin/chromium
         run: |
-          set -euo pipefail
-          if [[ -z "${TELEGRAM_BOT_TOKEN}" || -z "${TELEGRAM_CHAT_ID}" ]]; then
-            echo "::error::Add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID repository secrets."
+          set -Eeuo pipefail
+          if [[ ! -f iptv.js ]]; then
+            echo "::error::iptv.js is missing from the repository root."
             exit 1
           fi
 
-          MESSAGE=$'⏰ CloudLab IPTV run is due.\n\n1. Open the service and complete account creation manually.\n2. Do not automate or bypass CAPTCHA / Cloudflare checks.\n3. Once you have authorized account details, run the separate private playlist-processing step.'
-          curl --fail --silent --show-error \
-            --request POST \
-            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-            --data-urlencode "text=${MESSAGE}" \
-            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
+          echo "Starting iptv.js. The process will be stopped after 15 minutes."
+          set +e
+          timeout --signal=TERM --kill-after=30s 15m node iptv.js
+          status=$?
+          set -e
+
+          if [[ "$status" -eq 124 || "$status" -eq 137 ]]; then
+            echo "iptv.js reached the 15-minute runtime limit and was stopped."
+            exit 0
+          fi
+
+          exit "$status"
